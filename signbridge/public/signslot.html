@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>[hidden]{display:none!important}body{margin:0}img{max-width:100%}</style>
+</head>
+<body>
+<title>SignSlot</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: four portals side by side (Patient · SignSlot · Interpreter · Clinic), each its own scrolling app frame, under a demo guide strip. */
+:root{
+  --bg:#F2F6F6; --surface:#FFFFFF; --surface-2:#E8F0F0; --ink:#10282A; --muted:#55706F; --line:#D3E0E0;
+  --accent:#0B6E7A; --accent-ink:#FFFFFF; --accent-soft:#D9EEF0;
+  --good:#2C7A4B; --good-soft:#DFF1E5; --warn:#9A6212; --warn-soft:#FAEBD2; --bad:#B03E2B; --bad-soft:#F8E1DB;
+  --pat:#6A47A8; --pat-soft:#ECE4F7; --cli:#3E5560; --cli-soft:#E3EAED;
+  --f-display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --f-body:"Atkinson Hyperlegible","Segoe UI",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0C1819; --surface:#122224; --surface-2:#182C2E; --ink:#E2EEEE; --muted:#93AEAD; --line:#253B3D;
+  --accent:#4DB6C2; --accent-ink:#06191B; --accent-soft:#163C40;
+  --good:#6CC895; --good-soft:#173527; --warn:#E2AE5A; --warn-soft:#3A2C14; --bad:#F08B76; --bad-soft:#3D1F19;
+  --pat:#B89BEA; --pat-soft:#2C2240; --cli:#A9BEC8; --cli-soft:#1D2B31; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0C1819; --surface:#122224; --surface-2:#182C2E; --ink:#E2EEEE; --muted:#93AEAD; --line:#253B3D;
+  --accent:#4DB6C2; --accent-ink:#06191B; --accent-soft:#163C40;
+  --good:#6CC895; --good-soft:#173527; --warn:#E2AE5A; --warn-soft:#3A2C14; --bad:#F08B76; --bad-soft:#3D1F19;
+  --pat:#B89BEA; --pat-soft:#2C2240; --cli:#A9BEC8; --cli-soft:#1D2B31; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
+.wrap{max-width:1640px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 36px}
+h1,h2,h3,h4{font-family:var(--f-display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1{font-size:26px}h3{font-size:16px}h4{font-size:15px}
+p{margin:0}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.eyebrow{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+button,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.btn{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer}
+.btn:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn.sm{padding:4px 10px;font-size:13px}
+.btn.danger{background:var(--bad);border-color:var(--bad);color:var(--surface)}
+.btn.pat{background:var(--pat);border-color:var(--pat);color:var(--surface)}
+.btn.wide{width:100%;padding:12px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+select{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 9px;max-width:100%}
+
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:16px;justify-content:space-between;margin-bottom:14px}
+.brand{display:flex;gap:12px;align-items:center}
+.mark{width:42px;height:42px;border-radius:12px;background:var(--accent);display:grid;place-items:center;flex:none;color:var(--accent-ink)}
+.mark svg{width:26px;height:26px}
+.brand p{color:var(--muted);font-size:13px}
+.clock{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.clock .val{font-family:var(--f-mono);font-weight:500}
+.top-right{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px;overflow-x:auto}
+.tab{background:none;border:0;border-bottom:3px solid transparent;padding:9px 14px;cursor:pointer;font-weight:700;color:var(--muted);white-space:nowrap}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+
+.guide{display:flex;gap:12px;align-items:center;background:var(--ink);color:var(--bg);border-radius:12px;padding:10px 14px;margin-bottom:14px;flex-wrap:wrap}
+.guide .num{font-family:var(--f-mono);background:var(--bg);color:var(--ink);border-radius:6px;padding:1px 8px;font-weight:500}
+.guide .txt{flex:1;min-width:220px}
+.guide .steps{display:flex;gap:4px}
+.guide .steps i{width:18px;height:6px;border-radius:3px;background:var(--muted)}
+.guide .steps i.on{background:var(--bg)}
+
+.portals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:stretch}
+@media (max-width:1280px){.portals{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:720px){.portals{grid-template-columns:1fr}}
+.portal{background:var(--surface);border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column;min-width:0;height:max(600px,calc(100vh - 230px))}
+@media (max-width:1280px){.portal{height:auto}}
+.phead{padding:11px 14px;border-bottom:1px solid var(--line);border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.phead .who{display:flex;flex-direction:column}
+.phead .role{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+.phead h3{font-size:17px}
+.p-pat .phead{background:var(--pat-soft)} .p-pat .role{color:var(--pat)}
+.p-eng .phead{background:var(--accent-soft)} .p-eng .role{color:var(--accent)}
+.p-int .phead{background:var(--warn-soft)} .p-int .role{color:var(--warn)}
+.p-cli .phead{background:var(--cli-soft)} .p-cli .role{color:var(--cli)}
+.pbody{padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;flex:1;min-height:0}
+@media (max-width:1280px){.pbody{overflow:visible}}
+.sec{display:flex;flex-direction:column;gap:8px}
+.box{border:1px solid var(--line);border-radius:10px;padding:12px}
+.box.hl{border-color:var(--accent);background:var(--accent-soft)}
+.box.pat{border-color:var(--pat);background:var(--pat-soft)}
+.box.warn{border-color:var(--warn);background:var(--warn-soft)}
+.box.bad{border-color:var(--bad);background:var(--bad-soft)}
+.box.good{border-color:var(--good);background:var(--good-soft)}
+.big{font-family:var(--f-display);font-size:20px;line-height:1.2}
+
+/* patient */
+.tile{border:2px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;gap:10px;align-items:center;background:var(--surface);cursor:pointer;text-align:left;width:100%}
+.tile[aria-pressed="true"]{border-color:var(--pat);background:var(--pat-soft)}
+.tile svg{width:28px;height:28px;flex:none;color:var(--pat)}
+.tile b{display:block}
+.pgrid{display:grid;grid-template-columns:auto 1fr 1fr;gap:6px;align-items:center}
+.pgrid .dl{font-weight:700;font-size:14px;padding-right:4px}
+.pgrid .dl span{display:block;font-weight:400;font-size:12px;color:var(--muted)}
+.tog{border:2px solid var(--line);border-radius:10px;padding:9px 4px;font-weight:700;background:var(--surface);cursor:pointer;font-size:13px}
+.tog[aria-pressed="true"]{border-color:var(--pat);background:var(--pat);color:var(--surface)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:12px;border:1px solid var(--line);border-radius:6px;padding:1px 7px;background:var(--surface)}
+.asl{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--pat);background:none;border:1px solid var(--pat);border-radius:999px;padding:3px 10px;cursor:pointer}
+.asl svg{width:14px;height:14px}
+.opt{border:2px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.opt .t{font-family:var(--f-display);font-size:18px}
+.avatar{width:40px;height:40px;border-radius:50%;background:var(--pat);color:var(--surface);display:grid;place-items:center;font-weight:700;flex:none}
+.fb{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.fb button{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 2px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px}
+.fb button span{font-size:22px;line-height:1}
+.lock{display:flex;gap:8px;padding:8px 10px;border-radius:8px;background:var(--surface-2);font-size:12.5px;color:var(--muted)}
+.lock svg{flex:none;width:15px;height:15px;margin-top:2px}
+
+/* engine */
+.stages{display:flex;flex-wrap:wrap;gap:4px}
+.stg{font-size:11.5px;border-radius:999px;padding:2px 9px;background:var(--surface-2);color:var(--muted)}
+.stg.done{background:var(--accent-soft);color:var(--accent)}
+.stg.cur{background:var(--accent);color:var(--accent-ink);font-weight:700}
+.cand{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 10px;border:1px solid var(--line);border-radius:8px}
+.cand.top{border-color:var(--accent);background:var(--accent-soft)}
+.cand .nm{font-weight:700;font-size:14px}
+.score{display:flex;align-items:center;gap:6px}
+.bar{width:60px;height:7px;border-radius:4px;background:var(--surface-2);overflow:hidden}
+.cand.top .bar{background:var(--surface)}
+.bar i{display:block;height:100%;background:var(--accent)}
+.why{grid-column:1/-1;margin:2px 0 0;padding:0;list-style:none;font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;gap:0 10px}
+.why b{font-family:var(--f-mono);font-weight:500;color:var(--ink)}
+.why .neg b{color:var(--bad)}
+details summary{cursor:pointer;font-weight:700;font-size:13px}
+.exrow{font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--line)}
+.exrow span{color:var(--bad)}
+.feed{display:flex;flex-direction:column}
+.entry{display:flex;flex-direction:column;gap:2px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.entry .meta{display:flex;gap:8px;align-items:center}
+.entry .t{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.kind{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;border-radius:4px;padding:0 6px;width:fit-content}
+.k-agent{background:var(--accent-soft);color:var(--accent)}
+.k-rule{background:var(--surface-2);color:var(--ink)}
+.k-clinic{background:var(--cli-soft);color:var(--cli)}
+.k-message{background:var(--surface-2);color:var(--muted)}
+.k-audit{background:var(--good-soft);color:var(--good)}
+.k-interp{background:var(--warn-soft);color:var(--warn)}
+.k-patient{background:var(--pat-soft);color:var(--pat)}
+.k-alert{background:var(--bad-soft);color:var(--bad)}
+
+/* interpreter */
+textarea{width:100%;min-height:76px;border:1px solid var(--line);border-radius:8px;padding:9px;background:var(--surface);resize:vertical}
+.mic svg{width:16px;height:16px;vertical-align:-3px;margin-right:4px}
+.mic.on{background:var(--bad);border-color:var(--bad);color:var(--surface)}
+.ex-btn{text-align:left;background:var(--surface-2);border:0;border-radius:8px;padding:6px 9px;font-size:12.5px;cursor:pointer}
+.hint{font-size:12.5px;color:var(--muted)}
+.hint.err{color:var(--bad)}
+.rb-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.rb-list li{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 9px;border-radius:8px;background:var(--accent-soft);font-size:13px}
+.rb-list li.off{background:var(--bad-soft)}
+.rb-list li.warn{background:var(--warn-soft)}
+.x{background:none;border:0;cursor:pointer;color:var(--muted);font-size:17px;line-height:1;padding:0 4px}
+.week{display:grid;grid-template-columns:30px repeat(5,minmax(0,1fr));gap:3px}
+.week .dh{font-size:11px;font-weight:700;text-align:center}
+.hours{position:relative;height:220px}
+.hours span{position:absolute;right:3px;font-family:var(--f-mono);font-size:9.5px;color:var(--muted);transform:translateY(-50%)}
+.daycol{position:relative;height:220px;background:var(--surface-2);border-radius:5px}
+.blk{position:absolute;left:2px;right:2px;border-radius:4px;font-size:10px;padding:1px 3px;overflow:hidden;line-height:1.2}
+.blk.av{background:var(--accent-soft);border:1px solid var(--accent)}
+.blk.bk{background:var(--accent);color:var(--accent-ink);left:6px;right:6px;font-weight:700}
+
+/* clinic */
+.day{display:flex;flex-direction:column;gap:6px}
+.slots{display:flex;flex-wrap:wrap;gap:5px}
+.slot{font-family:var(--f-mono);font-size:12px;border-radius:7px;padding:4px 8px;border:1px solid var(--cli);background:var(--surface);color:var(--ink);cursor:pointer}
+.slot.closed{border-style:dashed;color:var(--muted);text-decoration:line-through;border-color:var(--line)}
+.slot.other{background:var(--cli-soft);border-color:transparent;color:var(--muted);cursor:default}
+.slot.held{background:var(--warn-soft);border-color:var(--warn);color:var(--warn);cursor:default;font-weight:500}
+.slot.booked{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);cursor:default;font-weight:500}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:11.5px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+
+/* roster / log tabs */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.ok{color:var(--good);font-weight:700}.badt{color:var(--bad);font-weight:700}.wn{color:var(--warn);font-weight:700}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 8px}
+.fbtn{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 12px;cursor:pointer;font-size:13px}
+.fbtn[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.logrow{display:grid;grid-template-columns:150px 100px minmax(0,1fr);gap:4px 12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px;align-items:baseline}
+@media (max-width:640px){.logrow{grid-template-columns:auto 1fr}.logrow .txt{grid-column:1/-1}}
+.foot{margin-top:22px;font-size:13px;color:var(--muted);max-width:80ch}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11V6a1.5 1.5 0 0 1 3 0v4"/><path d="M10 10V4.5a1.5 1.5 0 0 1 3 0V10"/><path d="M13 10V5.5a1.5 1.5 0 0 1 3 0V12"/><path d="M16 9.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-5-2.7L4 13.5a1.5 1.5 0 0 1 2.5-1.7L7 13"/></svg></div>
+      <div><h1>SignSlot</h1><p>ASL interpreter scheduling for Deaf patients · Lakeview Community Health, Chicago (demo)</p></div>
+    </div>
+    <div class="top-right">
+      <div class="clock"><span class="eyebrow">Simulated time</span><span class="val" id="clock"></span></div>
+      <button class="btn ghost sm" data-act="reset">Reset demo</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button class="tab" role="tab" data-tab="live" id="tb-live">Side by side</button>
+    <button class="tab" role="tab" data-tab="roster" id="tb-roster">Interpreter roster</button>
+    <button class="tab" role="tab" data-tab="log" id="tb-log">Audit log</button>
+  </nav>
+
+  <section id="v-live">
+    <div class="guide" id="guide"></div>
+    <div class="portals">
+      <div class="portal p-pat"><div class="phead"><div class="who"><span class="role">Patient app</span><h3>Rosa Delgado</h3></div><button class="asl" data-act="asl"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>ASL</button></div><div class="pbody" id="pp"></div></div>
+      <div class="portal p-eng"><div class="phead"><div class="who"><span class="role">SignSlot agent</span><h3>Matching &amp; tracking</h3></div></div><div class="pbody" id="pe"></div></div>
+      <div class="portal p-int"><div class="phead"><div class="who"><span class="role">Interpreter app</span><h3 id="intName"></h3></div><select id="intSel" aria-label="View as interpreter"></select></div><div class="pbody" id="pi"></div></div>
+      <div class="portal p-cli"><div class="phead"><div class="who"><span class="role">Clinic portal</span><h3 id="docName"></h3></div><select id="docSel" aria-label="Doctor"></select></div><div class="pbody" id="pc"></div></div>
+    </div>
+  </section>
+
+  <section id="v-roster" hidden>
+    <div class="card"><div class="row" style="justify-content:space-between"><h3>All interpreters</h3><button class="btn ghost sm" data-act="cycle">Start next weekly cycle</button></div>
+      <div class="tablewrap" style="margin-top:8px"><table id="roster" style="min-width:760px"></table></div></div>
+    <div class="card" style="margin-top:14px"><h3>Reliability rules</h3>
+      <p class="muted small" style="margin:4px 0 8px">Interpreters set their own availability, so they're accountable for it. Penalties only change ranking order. If a deprioritized interpreter is the only one free, they're still offered.</p>
+      <div class="tablewrap"><table>
+        <tr><td><b>Cancel 24+ hours before</b></td><td>No penalty</td></tr>
+        <tr><td><b>Cancel 12–24 hours before</b></td><td>Warning on record (3 warnings count as one late cancellation)</td></tr>
+        <tr><td><b>Cancel under 12 hours before</b></td><td>Moved to the middle of the list for the next cycle</td></tr>
+        <tr><td><b>Leave mid-appointment</b></td><td>Moved to the end of the list for the next cycle; patient handed to on-demand video instantly</td></tr>
+        <tr><td><b>No-show</b></td><td>Moved to the end of the list for 3 cycles</td></tr>
+      </table></div></div>
+  </section>
+
+  <section id="v-log" hidden>
+    <div class="card"><h3>Audit log</h3><p class="muted small">Every action by the agent, rule checks, the clinic, interpreters and the patient. This is the record that shows effective communication was provided.</p>
+      <div class="filters" id="filters"></div><div id="log"></div></div>
+  </section>
+
+  <p class="foot">Demo data only: every patient, interpreter and clinic here is fictional. Availability is understood with the browser's built-in speech recognition and a rule-based phrase parser. Matching uses transparent weighted scoring after hard credential rules. No external AI service is called and no data leaves this page.</p>
+</div>
+
+<script>
+// ---------- helpers ----------
+const DAYS=['Mon','Tue','Wed','Thu','Fri'],DAY_FULL=['Monday','Tuesday','Wednesday','Thursday','Friday'],DATES=['Oct 26','Oct 27','Oct 28','Oct 29','Oct 30'];
+const h=(H,M=0)=>H*60+M;
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function fmtT(m){const H=Math.floor(m/60),M=m%60;return `${H%12||12}:${String(M).padStart(2,'0')} ${H>=12?'PM':'AM'}`;}
+function fmtShort(m){const H=Math.floor(m/60),M=m%60;return `${H%12||12}${M?':'+String(M).padStart(2,'0'):''}${H>=12?'pm':'am'}`;}
+const dateOf=(day,min)=>new Date(2026,9,26+day,0,min);
+function fmtClock(d){return d.toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}
+function fmtDate(iso){return new Date(iso+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+const SPEC={med:'General medical',mh:'Mental health',ob:'Maternity',onc:'Oncology & serious news',tac:'Tactile / DeafBlind'};
+const BUF_BEFORE=10,BUF_AFTER=15,DAY_START=h(8),DAY_END=h(17),DUR=30;
+
+// ---------- PARSER START ----------
+const NUMW={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12};
+const DAYK=['mon','tue','wed','thu','fri'];
+const DW='mondays?|mon|tuesdays?|tues?|wednesdays?|weds?|thursdays?|thurs?|thur|thu|fridays?|fri';
+const T='(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?';
+function dayIdx(w){w=w.toLowerCase();if(w.startsWith('mon'))return 0;if(w.startsWith('tu'))return 1;if(w.startsWith('we'))return 2;if(w.startsWith('th'))return 3;if(w.startsWith('fr'))return 4;return -1;}
+function hr(hs,ms,ap){let H=+hs,M=+(ms||0);if(ap==='pm'&&H<12)H+=12;else if(ap==='am'&&H===12)H=0;else if(!ap&&H>=1&&H<=6)H+=12;return H*60+M;}
+function normalizeText(t){
+  t=' '+t.toLowerCase()+' ';
+  t=t.replace(/[–—]/g,'-').replace(/o'?clock/g,' ').replace(/\b(noon|midday)\b/g,'12pm').replace(/a\.m\.?/g,'am').replace(/p\.m\.?/g,'pm');
+  t=t.replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/g,w=>NUMW[w]);
+  t=t.replace(/\bhalf past (\d{1,2})/g,'$1:30');
+  t=t.replace(/(\d)\s+(am|pm)\b/g,'$1$2');
+  t=t.replace(/\b(through|thru)\b/g,'to');
+  t=t.replace(/\bexcept( for| on)?\b/g,', not ');
+  t=t.replace(/\b(every ?day|each day|all week|the whole week|whole week|weekdays|every weekday)\b/g,' mon tue wed thu fri ');
+  t=t.replace(new RegExp(`\\b(${DW})\\s*(?:-|to|until|till)\\s*(${DW})\\b`,'g'),(m,a,b)=>{const i=dayIdx(a),j=dayIdx(b);return (i<0||j<i)?m:DAYK.slice(i,j+1).join(' ');});
+  return t;
+}
+function parseAvailability(text){
+  const t=normalizeText(text);
+  const clauses=t.split(/[,.;!?]|\bbut\b|\bhowever\b|\bthough\b/).map(c=>c.trim()).filter(Boolean);
+  const dayRe=new RegExp(`\\b(${DW})\\b`,'g');
+  let slots=[];const off=new Set(),mentioned=new Set(),unparsed=[],partial=[];
+  let lastDays=[],lastSlots=[];
+  const subtract=(d,s,e)=>{const out=[];for(const sl of slots){if(sl.day!==d||sl.e<=s||sl.s>=e){out.push(sl);continue;}if(sl.s<s)out.push({...sl,e:s});if(sl.e>e)out.push({...sl,s:e});}slots=out;};
+  for(const c of clauses){
+    const days=[...new Set([...c.matchAll(dayRe)].map(m=>dayIdx(m[1])))];
+    let rest=c.replace(dayRe,' ');let m,endCap=null,startMin=null;
+    if((m=rest.match(new RegExp(`\\bnot (?:after|past|later than) ${T}`)))){endCap=hr(m[1],m[2],m[3]);rest=rest.replace(m[0],' ');}
+    if((m=rest.match(new RegExp(`\\bnot (?:before|earlier than) ${T}`)))){startMin=hr(m[1],m[2],m[3]);rest=rest.replace(m[0],' ');}
+    const neg=/\b(not|no|can't|cant|cannot|unavailable|busy|off|away)\b/.test(rest);
+    const vid=/\b(video|online|remote|remotely|virtual|virtually|zoom)\b/.test(rest),inp=/\b(in[- ]?person|on[- ]?site|onsite|face to face)\b/.test(rest);
+    const mode=vid&&!inp?'video':inp&&!vid?'in-person':vid&&inp?'both':null;
+    let s=null,e=null;
+    if((m=rest.match(new RegExp(`(?:from |between )?${T}\\s*(?:-|to|till|til|until|and)\\s*${T}`)))){
+      s=hr(m[1],m[2],m[3]||(m[6]==='am'?'am':null));e=hr(m[4],m[5],m[6]);if(e<=s&&e+720<=1440)e+=720;
+    }else if((m=rest.match(new RegExp(`\\b(?:after|from|starting(?: at)?)\\s+${T}`)))){s=hr(m[1],m[2],m[3]);e=Math.max(DAY_END,s+120);}
+    else if((m=rest.match(new RegExp(`\\b(?:until|till|til|before|up to|up until)\\s+${T}`)))){s=DAY_START;e=hr(m[1],m[2],m[3]);}
+    else{
+      const mo=/\bmornings?\b/.test(rest),af=/\bafternoons?\b/.test(rest),ev=/\bevenings?\b/.test(rest);
+      if(mo&&af){s=h(8);e=h(17);}else if(mo){s=h(8);e=h(12);}else if(af){s=h(12);e=h(17);}else if(ev){s=h(17);e=h(20);}
+      else if(/\b(all|whole|full) day\b/.test(rest)){s=DAY_START;e=DAY_END;}
+    }
+    const hasTime=s!==null&&e>s;
+    if(days.length){
+      lastDays=days;lastSlots=[];days.forEach(d=>mentioned.add(d));
+      if(neg&&!hasTime){days.forEach(d=>{off.add(d);slots=slots.filter(x=>x.day!==d);});}
+      else if(neg&&hasTime){days.forEach(d=>{subtract(d,s,e);partial.push({day:d,s,e});});}
+      else{const S0=Math.max(hasTime?s:DAY_START,startMin??0),E0=Math.min(hasTime?e:DAY_END,endCap??1440);
+        days.forEach(d=>{off.delete(d);const sl={day:d,s:S0,e:E0,mode:mode||'both'};slots.push(sl);lastSlots.push(sl);});}
+    }else if((hasTime||mode||endCap!==null||startMin!==null)&&lastDays.length){
+      if(neg&&hasTime){lastDays.forEach(d=>{subtract(d,s,e);partial.push({day:d,s,e});});}
+      else{const targets=lastSlots.length?lastSlots:slots.filter(x=>lastDays.includes(x.day));
+        targets.forEach(sl=>{if(hasTime&&!neg){sl.s=s;sl.e=e;}if(mode)sl.mode=mode;if(endCap!==null)sl.e=Math.min(sl.e,endCap);if(startMin!==null)sl.s=Math.max(sl.s,startMin);});}
+    }else{
+      const left=c.replace(/\b(i'm|im|i am|i|free|available|and|on|the|can|do|work|be|will|this|next|week|so|hi|hey|ok|okay|um|uh|also|yes|for|me|my|is|at|any|time|anytime|only)\b/g,'').replace(/[^a-z0-9]/g,'');
+      if(left)unparsed.push(c);
+    }
+  }
+  slots=slots.filter(x=>x.e>x.s).sort((a,b)=>a.day-b.day||a.s-b.s);
+  return {slots,off:[...off].sort(),partial,mentioned:[...mentioned].sort(),unparsed};
+}
+// ---------- PARSER END ----------
+
+// ---------- data ----------
+function seed(){
+  const S_=(day,s,e,mode='both')=>({day,s:h(s),e:h(e),mode});
+  const I=o=>({bookings:[],penalty:null,warnings:0,cdi:false,...o});
+  const ob=(day,H,M)=>({appt:'other',day,s:h(H,M)-BUF_BEFORE,e:h(H,M)+DUR+BUF_AFTER});
+  const interpreters=[
+    I({id:'maya',name:'Maya Thompson',cert:'RID NIC',certNo:'NIC-48213',certExp:'2028-06-30',license:{status:'active',exp:'2027-12-31'},specs:['med','mh'],modes:['in-person','video'],gender:'F',miles:4,slots:[S_(0,8,12),S_(1,8,17),S_(2,13,17),S_(3,8,12)]}),
+    I({id:'daniel',name:'Daniel Ortiz',cert:'RID NIC',certNo:'NIC-39007',certExp:'2027-11-30',license:{status:'active',exp:'2027-06-30'},specs:['med'],modes:['in-person','video'],gender:'M',miles:9,slots:[S_(0,8,17),S_(2,8,17),S_(4,8,12)],bookings:[ob(0,14,0)]}),
+    I({id:'priya',name:'Priya Raman',cert:'RID NIC',certNo:'NIC-51120',certExp:'2029-03-31',license:{status:'active',exp:'2028-03-31'},specs:['med','ob'],modes:['video'],gender:'F',miles:22,slots:[0,1,2,3,4].map(d=>S_(d,9,13,'video'))}),
+    I({id:'marcus',name:'Marcus Bell',cert:'RID CDI',certNo:'CDI-10452',certExp:'2028-01-31',license:{status:'active',exp:'2027-09-30'},cdi:true,specs:['med','mh','tac'],modes:['in-person'],gender:'M',miles:6,slots:[S_(1,9,15,'in-person'),S_(3,9,15,'in-person')]}),
+    I({id:'grace',name:'Grace Kim',cert:'RID NIC',certNo:'NIC-44871',certExp:'2027-08-31',license:{status:'active',exp:'2027-08-31'},specs:['med','onc'],modes:['in-person','video'],gender:'F',miles:12,slots:[S_(0,13,17),S_(1,13,17),S_(3,8,17)],bookings:[ob(3,9,0)]}),
+    I({id:'ethan',name:'Ethan Walsh',cert:'RID NIC',certNo:'NIC-30219',certExp:'2026-09-30',license:{status:'active',exp:'2027-02-28'},specs:['med'],modes:['in-person','video'],gender:'M',miles:3,slots:[0,1,2,3,4].map(d=>S_(d,8,17))}),
+    I({id:'sofia',name:'Sofia Alvarez',cert:'RID NIC',certNo:'NIC-47730',certExp:'2028-10-31',license:{status:'expired',exp:'2026-08-31'},specs:['med','mh'],modes:['in-person','video'],gender:'F',miles:5,slots:[S_(0,8,12),S_(2,8,12)]}),
+    I({id:'james',name:'James Okafor',cert:'RID NIC',certNo:'NIC-42288',certExp:'2028-05-31',license:{status:'active',exp:'2027-05-31'},specs:['med','tac'],modes:['in-person'],gender:'M',miles:15,slots:[S_(2,8,17,'in-person'),S_(4,8,17,'in-person')]}),
+    I({id:'hannah',name:'Hannah Novak',cert:'RID NIC',certNo:'NIC-50064',certExp:'2028-12-31',license:{status:'active',exp:'2028-01-31'},specs:['med'],modes:['video'],gender:'F',miles:30,slots:[0,1,2,3,4].map(d=>S_(d,13,18,'video')),penalty:{level:'middle',cycles:1,reason:'Cancelled 1 hour before an appointment on Oct 21'}}),
+    I({id:'leo',name:'Leo Brooks',cert:'RID NIC',certNo:'NIC-45519',certExp:'2027-12-31',license:{status:'active',exp:'2027-10-31'},specs:['med','ob'],modes:['in-person','video'],gender:'M',miles:7,slots:[S_(1,8,12),S_(2,8,12),S_(4,13,17)]}),
+  ];
+  const mk=(day,times,others=[])=>times.map(t=>{const [H,M]=t.split(':').map(Number);return {day,start:h(H,M),status:others.includes(t)?'other':'open'};});
+  const doctors={
+    patel:{id:'patel',name:'Dr. Anita Patel',dept:'Behavioral Health',room:'Behavioral Health, Suite 3B',cat:'mh',visit:'Behavioral health follow-up',
+      slots:[...mk(0,['9:00','9:30','10:00','10:30','11:00','14:00','14:30','15:00'],['10:30','14:00']),...mk(1,['13:00','13:30','14:00']),...mk(2,['9:00','9:30','10:00','10:30'],['9:00']),...mk(3,['15:00','15:30']),...mk(4,['10:00','10:30','11:00'])]},
+    meyer:{id:'meyer',name:'Dr. Lucas Meyer',dept:'Family Medicine',room:'Family Medicine, Room 12',cat:'med',visit:'Primary care visit',
+      slots:[...mk(0,['13:00','13:30','14:00','15:00','15:30'],['14:00']),...mk(1,['9:00','9:30','10:00','10:30']),...mk(3,['9:00','9:30','10:00'],['9:30']),...mk(4,['13:00','13:30','14:00'])]},
+  };
+  const patient={name:'Rosa Delgado',needs:{tactile:false,genderPref:'F',modePref:'in-person',modeReq:null,past:['maya']}};
+  const appt={status:'draft',doctor:'patel',blocks:[],options:[],choice:null,interp:null,mode:null,excluded:[],feedback:null,notice:null};
+  return {interpreters,doctors,patient,appt,log:[],clock:new Date(2026,9,25,9,0)};
+}
+let S,UI,rec=null;
+const VRI={id:'vri',name:'On-demand video interpreter',cert:'RID NIC (pool)',certNo:'VRI pool',bookings:[],penalty:null};
+const byId=id=>id==='vri'?VRI:S.interpreters.find(x=>x.id===id);
+const A=()=>S.appt,DOC=()=>S.doctors[S.appt.doctor];
+function addLog(kind,text,t=null){S.log.push({t:new Date(t||S.clock),kind,text,seq:S.log.length});}
+function setClock(d){if(d>S.clock)S.clock=new Date(d);}
+function bump(min){S.clock=new Date(S.clock.getTime()+min*60000);}
+function init(){
+  S=seed();UI={tab:UI?.tab||'live',interp:'maya',doctor:'patel',filter:'all',readback:null,draft:'',hint:'',hintErr:false,aslNote:false,listening:false};
+  const at=(d,H,M)=>new Date(2026,9,d,H,M);
+  addLog('agent','Weekly availability check-in sent to 10 interpreters by text message.',at(24,16,10));
+  addLog('interp','Daniel Ortiz confirmed availability by voice: Mon 8am–5pm, Wed 8am–5pm, Fri 8am–12pm.',at(24,18,32));
+  addLog('clinic','Dr. Anita Patel and Dr. Lucas Meyer published next week’s open slots.',at(24,19,0));
+  addLog('rule','Credential check: Ethan Walsh’s RID certification expired Sep 30, 2026. Excluded until renewed.',at(25,8,0));
+  addLog('rule','Credential check: Sofia Alvarez’s Illinois interpreter license expired Aug 31, 2026. Excluded until renewed.',at(25,8,0));
+}
+
+// ---------- matching ----------
+function slotFor(it,day,s,e){return it.slots.find(sl=>sl.day===day&&sl.s<=s&&sl.e>=e);}
+function busy(it,day,s,e){return it.bookings.some(b=>b.appt!=='demo'&&b.day===day&&b.s<e&&b.e>s);}
+function evaluate(it,day,start){
+  const n=S.patient.needs,doc=DOC(),ex=[],why=[];let score=40;
+  if(new Date(it.certExp+'T23:59')<dateOf(day,start))ex.push(`RID certification expired ${fmtDate(it.certExp)}`);
+  if(it.license.status!=='active')ex.push(`Illinois license ${it.license.status}`);
+  if(n.tactile&&!it.specs.includes('tac'))ex.push('No tactile / DeafBlind experience');
+  if(A().excluded.includes(it.id))ex.push('Already cancelled or declined this visit');
+  const s=start-BUF_BEFORE,e=start+DUR+BUF_AFTER,sl=slotFor(it,day,s,e);
+  if(!sl)ex.push(`Not free ${DAYS[day]} ${fmtShort(s)}–${fmtShort(e)} (incl. buffer)`);
+  else if(busy(it,day,s,e))ex.push('Booked with another patient');
+  const canIn=it.modes.includes('in-person')&&(!sl||sl.mode!=='video'),canVid=it.modes.includes('video')&&(!sl||sl.mode!=='in-person');
+  if(n.modeReq==='in-person'&&!canIn)ex.push('Patient needs in-person support');
+  const mode=n.modeReq==='in-person'?'in-person':(n.modePref==='in-person'&&canIn)||!canVid?'in-person':'video';
+  if(doc.cat!=='med'&&it.specs.includes(doc.cat)){score+=20;why.push(['+20',`${SPEC[doc.cat]} experience`]);}
+  else if(it.specs.includes('med')){score+=5;why.push(['+5','General medical experience']);}
+  if(n.past.includes(it.id)){score+=20;why.push(['+20','Rosa has worked with them before']);}
+  if(n.genderPref){if(it.gender===n.genderPref){score+=10;why.push(['+10','Matches gender preference']);}else{score-=10;why.push(['−10','Not the preferred gender']);}}
+  if(n.modePref==='in-person'){if(mode==='in-person'){score+=10;why.push(['+10','Can attend in person']);}else{score-=5;why.push(['−5','Would join by video']);}}
+  if(mode==='in-person'){const d=Math.min(10,Math.round(it.miles/2));if(d){score-=d;why.push([`−${d}`,`${it.miles} miles away`]);}}
+  let group=0;
+  if(it.penalty?.level==='middle'){score-=30;why.push(['−30','Late cancellation: middle of list']);}
+  if(it.penalty?.level==='end'){group=1;why.push(['Last','Deprioritized to end of list']);}
+  if(it.warnings&&!it.penalty){score-=5*it.warnings;why.push([`−${5*it.warnings}`,`${it.warnings} cancellation warning${it.warnings>1?'s':''}`]);}
+  return {it,ex,why,score:Math.max(0,Math.min(100,score)),group,mode};
+}
+function rank(day,start){const ev=S.interpreters.map(it=>evaluate(it,day,start));return {ok:ev.filter(x=>!x.ex.length).sort((x,y)=>x.group-y.group||y.score-x.score),no:ev.filter(x=>x.ex.length)};}
+const when=(day,start)=>`${DAYS[day]} ${DATES[day]}, ${fmtT(start)}`;
+const blockLabel=k=>{const [d,p]=k.split('-');return `${DAYS[+d]} ${p==='am'?'morning':'afternoon'}`;};
+
+// ---------- actions ----------
+function findOptions(){
+  const a=A(),doc=DOC();
+  const inBlocks=s=>a.blocks.some(k=>{const [d,p]=k.split('-');const [bs,be]=p==='am'?[h(8),h(12)]:[h(12),h(17)];return s.day===+d&&s.start>=bs&&s.start<be;});
+  const cand=doc.slots.filter(s=>s.status==='open'&&inBlocks(s));
+  bump(1);
+  addLog('patient',`Rosa asked for a ${doc.visit.toLowerCase()} and is free: ${a.blocks.map(blockLabel).join(', ')}.`);
+  addLog('agent',`Found ${cand.length} open slot${cand.length===1?'':'s'} in ${doc.name}’s schedule inside Rosa’s free times.`);
+  if(!cand.length){a.notice={type:'nodoc'};addLog('alert','No doctor time fits. Asked Rosa to add more free times.');return;}
+  const scored=cand.map(s=>{const r=rank(s.day,s.start);return {slot:s,best:r.ok[0]||null};});
+  addLog('rule',`Checked ${cand.length} slot${cand.length===1?'':'s'} × ${S.interpreters.length} interpreters against credentials, availability (with buffer) and Rosa’s needs.`);
+  const good=scored.filter(x=>x.best).sort((x,y)=>x.best.group-y.best.group||y.best.score-x.best.score||x.slot.day-y.slot.day||x.slot.start-y.slot.start);
+  let picked=[];const days=new Set();
+  for(const x of good)if(picked.length<3&&!days.has(x.slot.day)){picked.push(x);days.add(x.slot.day);}
+  for(const x of good)if(picked.length<3&&!picked.includes(x))picked.push(x);
+  picked.sort((x,y)=>(y.best.score-x.best.score)||x.slot.day-y.slot.day||x.slot.start-y.slot.start);
+  if(!picked.length){picked=scored.slice(0,3).map(x=>({slot:x.slot,best:{it:VRI,mode:'video',score:null,why:[]}}));addLog('alert','No certified interpreter is free at those times. Offering the times with an on-demand video interpreter.');}
+  a.options=picked.map(x=>({day:x.slot.day,start:x.slot.start,interp:x.best.it.id,mode:x.best.mode,score:x.best.score,why:x.best.why}));
+  a.status='options';a.notice=null;
+  const b=a.options[0];
+  addLog('agent',`Sent Rosa ${a.options.length} option${a.options.length>1?'s':''}. Best: ${when(b.day,b.start)} with ${byId(b.interp).name} (${b.score??'—'}/100).`);
+  addLog('message','Patient app (ASL video + text): “These times work for you, your doctor and an ASL interpreter. Tap one.”');
+}
+function chooseOption(i){
+  const a=A(),o=a.options[i],slot=DOC().slots.find(s=>s.day===o.day&&s.start===o.start);
+  slot.status='held';a.choice={day:o.day,start:o.start};bump(2);
+  addLog('patient',`Rosa chose ${when(o.day,o.start)}.`);
+  addLog('clinic',`Slot held in ${DOC().name}’s schedule until an interpreter confirms.`);
+  requestInterp(o.interp,o.mode);
+}
+function requestInterp(id,mode){
+  const a=A(),c=a.choice;a.interp=id;a.mode=mode;
+  if(id==='vri'){confirmBooking(true);return;}
+  a.status='requested';UI.interp=id;UI.readback=null;UI.hint='';
+  addLog('message',`Text to ${byId(id).name}: “New request: ${when(c.day,c.start)}–${fmtT(c.start+DUR)}, ${DOC().visit.toLowerCase()}, ${mode==='video'?'by video':'in person at '+DOC().room}. Accept?”`);
+}
+function confirmBooking(vri=false){
+  const a=A(),c=a.choice,it=byId(a.interp);
+  if(!vri)it.bookings.push({appt:'demo',day:c.day,s:c.start-BUF_BEFORE,e:c.start+DUR+BUF_AFTER});
+  DOC().slots.find(s=>s.day===c.day&&s.start===c.start).status='booked';
+  a.status='booked';bump(3);
+  addLog(vri?'agent':'interp',vri?'Booked an on-demand video interpreter from the national pool.':`${it.name} accepted.`);
+  addLog('message',`Patient app to Rosa (ASL video + text): “Booked: ${when(c.day,c.start)}. ${vri?'An ASL interpreter will join by video.':'Your interpreter '+it.name.split(' ')[0]+' will '+(a.mode==='video'?'join by video.':'meet you there.')}”`);
+  addLog('clinic',`${DOC().name}’s schedule updated: ASL interpreter confirmed for Rosa Delgado.`);
+}
+function decline(){const a=A(),it=byId(a.interp);a.excluded.push(it.id);bump(2);addLog('interp',`${it.name} declined the request.`);rematch();}
+function rematch(){
+  const a=A(),c=a.choice,r=rank(c.day,c.start);a.notice={type:'changed'};
+  if(r.ok.length){const top=r.ok[0];addLog('agent',`Rematched automatically for the same time: ${top.it.name}, ${top.mode}, ${top.score}/100.`);requestInterp(top.it.id,top.mode);}
+  else{addLog('alert','No other certified interpreter is free at this time. Switched to an on-demand video interpreter.');requestInterp('vri','video');}
+}
+function applyPenalty(it,level,cycles,reason){const r=l=>l==='end'?2:l==='middle'?1:0;if(!it.penalty||r(level)>r(it.penalty.level)||(level===it.penalty.level&&cycles>it.penalty.cycles))it.penalty={level,cycles,reason};}
+const durTxt=m=>m>=120?Math.round(m/60)+' hours':m+' minutes';
+function cancelOptions(){
+  const c=A().choice,mins=Math.round((dateOf(c.day,c.start)-S.clock)/60000),opts=[{v:mins,l:`Now (${durTxt(mins)} before)`}];
+  if(mins>720)opts.push({v:720,l:'12 hours before'});if(mins>60)opts.push({v:60,l:'1 hour before'});return opts;
+}
+function cancelBooking(minsBefore){
+  const a=A(),c=a.choice,it=byId(a.interp);
+  setClock(new Date(dateOf(c.day,c.start)-minsBefore*60000));
+  addLog('interp',`${it.name} cancelled ${durTxt(minsBefore)} before the appointment.`);
+  if(minsBefore>=1440)addLog('rule','Cancelled 24+ hours ahead: no penalty.');
+  else if(minsBefore>=720){it.warnings++;let t=`Cancelled 12–24 hours ahead: warning recorded (${it.warnings} of 3 this month).`;if(it.warnings>=3){it.warnings=0;applyPenalty(it,'middle',1,'Three cancellation warnings this month');t+=' Third warning: moved to the middle of the list.';}addLog('rule',t);}
+  else{applyPenalty(it,'middle',1,`Cancelled ${durTxt(minsBefore)} before an appointment on ${DATES[c.day]}`);addLog('rule','Cancelled under 12 hours ahead: moved to the middle of the list for the next cycle.');}
+  it.bookings=it.bookings.filter(b=>b.appt!=='demo');a.excluded.push(it.id);a.interp=null;
+  DOC().slots.find(s=>s.day===c.day&&s.start===c.start).status='held';
+  rematch();
+}
+function advance(){
+  const a=A(),c=a.choice,it=byId(a.interp),T0=dateOf(c.day,c.start);
+  if(a.status==='booked'){setClock(new Date(T0-24*3600000));a.status='reminded';
+    addLog('agent','Sent 24-hour reminders to Rosa, the interpreter and the clinic.');
+    if(a.interp!=='vri'){addLog('interp',`${it.name} replied “C”: confirmed.`);addLog('rule',`Credential re-check passed: ${it.certNo} valid to ${fmtDate(it.certExp)}, Illinois license active.`);}
+  }else if(a.status==='reminded'){setClock(new Date(T0-8*60000));a.status='inprogress';
+    addLog('rule',a.mode==='video'?`${it.name} joined the video link at ${fmtT(c.start-8)}.`:`${it.name} checked in at the front desk at ${fmtT(c.start-8)}.`);
+    setClock(T0);addLog('agent','Appointment started on time with the interpreter present.');
+  }else if(a.status==='inprogress'){setClock(new Date(T0.getTime()+DUR*60000));a.status='completed';
+    addLog('rule',`Appointment ended at ${fmtT(c.start+DUR)}. Interpreter present for the full appointment.`);
+    addLog('audit',`Effective communication record: ASL via ${it.name} (${it.certNo}${a.interp!=='vri'?', Illinois license active':''}), ${a.mode}, ${DUR} min, ${DOC().visit} with ${DOC().name}.`);
+    addLog('message','Patient app to Rosa: short feedback request in ASL video (tap a face to answer).');
+  }
+}
+function midProblem(kind){
+  const a=A(),c=a.choice,it=byId(a.interp),T0=dateOf(c.day,c.start),d=DATES[c.day];
+  it.bookings=it.bookings.filter(b=>b.appt!=='demo');a.excluded.push(it.id);
+  if(kind==='mid'){setClock(new Date(T0.getTime()+10*60000));addLog('alert',`${it.name} left 10 minutes into the appointment.`);
+    applyPenalty(it,'end',1,`Left mid-appointment on ${d}`);addLog('rule','Left mid-appointment: moved to the end of the list for the next cycle.');
+    a.interp='vri';a.mode='video';bump(2);addLog('agent','Handed Rosa to an on-demand video interpreter within 2 minutes. The appointment continued.');}
+  else{setClock(new Date(T0.getTime()+5*60000));addLog('alert',`${it.name} had not checked in 5 minutes after the start time.`);
+    applyPenalty(it,'end',3,`No-show on ${d}`);addLog('rule','Recorded as a no-show: moved to the end of the list for 3 cycles.');
+    a.interp='vri';a.mode='video';a.status='inprogress';bump(2);addLog('agent','Connected an on-demand video interpreter and alerted the clinic. The appointment started 7 minutes late.');}
+  a.notice={type:'changed'};
+}
+function giveFeedback(score,label){
+  const a=A();bump(60);a.feedback=score;a.status='done';
+  addLog('patient',`Rosa rated the interpreter support: ${label} (${score}/5).`);
+  if(a.interp!=='vri'&&score>=4&&!S.patient.needs.past.includes(a.interp)){S.patient.needs.past.push(a.interp);addLog('agent',`Saved preference: ${byId(a.interp).name} will be tried first for Rosa’s follow-ups.`);}
+  else if(a.interp!=='vri'&&score>=4)addLog('agent',`Continuity kept: ${byId(a.interp).name} stays Rosa’s first choice.`);
+  if(score<=2)addLog('alert','Low rating: clinic asked to follow up with Rosa by ASL video message.');
+}
+function confirmAv(){
+  const it=byId(UI.interp),p=UI.readback.result;
+  it.slots=it.slots.filter(s=>!p.mentioned.includes(s.day)).concat(p.slots.map(s=>({...s}))).sort((a,b)=>a.day-b.day||a.s-b.s);
+  const sum=p.mentioned.map(d=>{const ss=p.slots.filter(s=>s.day===d);return `${DAYS[d]} ${ss.length?ss.map(s=>`${fmtShort(s.s)}–${fmtShort(s.e)}${s.mode!=='both'?' '+(s.mode==='video'?'video':'in person'):''}`).join(', '):'off'}`;}).join('; ');
+  bump(1);addLog('interp',`${it.name} confirmed availability by voice: ${sum}.`);
+  it.bookings.filter(b=>p.mentioned.includes(b.day)&&!it.slots.some(s=>s.day===b.day&&s.s<=b.s&&s.e>=b.e)).forEach(b=>addLog('alert',`Conflict: ${it.name}’s new availability doesn’t cover an existing ${DAYS[b.day]} booking. Clinic alerted to keep or rematch.`));
+  UI.readback=null;UI.draft='';UI.hint='Saved. SignSlot uses this for every new match.';UI.hintErr=false;
+}
+function nextCycle(){S.interpreters.forEach(it=>{if(it.penalty){it.penalty.cycles--;if(it.penalty.cycles<=0){addLog('rule',`${it.name} is back in normal ranking (penalty period ended).`);it.penalty=null;}}});addLog('agent','New weekly cycle: availability check-in sent to all interpreters.');}
+
+// ---------- render ----------
+const KIND={agent:'Agent',rule:'Rule check',clinic:'Clinic',message:'Message',audit:'Audit record',interp:'Interpreter',patient:'Patient',alert:'Alert'};
+const STAGES=[['draft','Request'],['options','Options'],['requested','Interpreter asked'],['booked','Booked'],['reminded','Reminded'],['inprogress','In progress'],['completed','Completed'],['done','Feedback']];
+const ICON={
+  brain:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5a3 3 0 0 0-5.8 1A3 3 0 0 0 4 11a3 3 0 0 0 2 5 3 3 0 0 0 6 1V5z"/><path d="M12 5a3 3 0 0 1 5.8 1A3 3 0 0 1 20 11a3 3 0 0 1-2 5 3 3 0 0 1-6 1"/></svg>',
+  steth:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 3v6a4 4 0 0 0 8 0V3"/><path d="M10 13v2a5 5 0 0 0 10 0v-2"/><circle cx="20" cy="11" r="2"/></svg>',
+  lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+  mic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>'
+};
+const entryHTML=l=>`<div class="entry"><div class="meta"><span class="kind k-${l.kind}">${KIND[l.kind]}</span><span class="t">${fmtClock(l.t)}</span></div><div>${esc(l.text)}</div></div>`;
+const whyHTML=why=>`<ul class="why">${why.map(w=>`<li class="${w[0].startsWith('−')||w[0]==='Last'?'neg':''}"><b>${w[0]}</b> ${esc(w[1])}</li>`).join('')}</ul>`;
+
+function guide(){
+  const a=A(),i=STAGES.findIndex(s=>s[0]===a.status),nm=a.interp?byId(a.interp).name:'';
+  const msg={draft:'Rosa picks her visit and taps when she’s free, then <b>Find a time</b>.',
+    options:'Rosa chooses one of the times SignSlot found.',
+    requested:`${esc(nm)} accepts or declines in the <b>Interpreter app</b>.`,
+    booked:'Skip ahead in <b>SignSlot</b>, or have the interpreter cancel to watch the rematch.',
+    reminded:'Skip to appointment time, or simulate a no-show.',
+    inprogress:'Skip to the end, or simulate the interpreter leaving.',
+    completed:'Rosa rates the visit in the <b>Patient app</b>.',
+    done:'Done. Open the <b>Audit log</b>, or Reset demo.'}[a.status];
+  document.getElementById('guide').innerHTML=`<span class="num">${i+1}/${STAGES.length}</span><span class="txt">${msg}</span><span class="steps" aria-hidden="true">${STAGES.map((s,j)=>`<i class="${j<=i?'on':''}"></i>`).join('')}</span>`;
+}
+function renderPatient(){
+  const a=A(),n=S.patient.needs,doc=DOC();let html='';
+  if(UI.aslNote)html+=`<div class="box pat small">An ASL video of this screen, recorded by a Deaf signer, plays here. (Placeholder in the prototype.)</div>`;
+  if(a.notice?.type==='changed'&&['requested','booked','reminded','inprogress'].includes(a.status))html+=`<div class="box warn small"><b>Your interpreter changed.</b> SignSlot found a replacement, and your appointment time stays the same.</div>`;
+  if(a.status==='draft'){
+    html+=`<div class="sec"><p class="eyebrow">1 · Which visit?</p>${Object.values(S.doctors).map(d=>`<button class="tile" data-doc="${d.id}" aria-pressed="${a.doctor===d.id}">${d.cat==='mh'?ICON.brain:ICON.steth}<span><b>${esc(d.visit)}</b><span class="muted small">${esc(d.name)}</span></span></button>`).join('')}</div>
+    <div class="sec"><p class="eyebrow">2 · When are you free?</p><div class="pgrid"><span></span><span class="eyebrow" style="text-align:center">Morning</span><span class="eyebrow" style="text-align:center">Afternoon</span>
+     ${DAYS.map((d,i)=>`<span class="dl">${d}<span>${DATES[i]}</span></span>${['am','pm'].map(p=>`<button class="tog" data-blk="${i}-${p}" aria-pressed="${a.blocks.includes(i+'-'+p)}" aria-label="${DAY_FULL[i]} ${p==='am'?'morning':'afternoon'}">${p==='am'?'AM':'PM'}</button>`).join('')}`).join('')}</div></div>
+    ${a.notice?.type==='nodoc'?'<div class="box bad small">No doctor times fit. Tap a few more times.</div>':''}
+    <div class="sec"><p class="eyebrow">Saved on your profile</p><div class="chips"><span class="chip">ASL</span><span class="chip">${n.modePref==='in-person'?'In person':'Video is fine'}</span><span class="chip">${n.genderPref==='F'?'Female interpreter':n.genderPref==='M'?'Male interpreter':'Any interpreter'}</span>${n.past.map(id=>`<span class="chip">Likes ${esc(byId(id).name.split(' ')[0])}</span>`).join('')}</div>
+     <div class="lock">${ICON.lock}<span>Only these preferences go to SignSlot. Your diagnoses and medical notes never do.</span></div></div>
+    <button class="btn pat wide" data-act="find" ${a.blocks.length?'':'disabled'}>Find a time</button>`;
+  }else if(a.status==='options'){
+    html+=`<p class="big">Pick a time</p><p class="small muted">Each works for you, ${esc(doc.name)} and an ASL interpreter.</p>
+    ${a.options.map((o,i)=>{const it=byId(o.interp);return `<div class="opt"><span class="t">${DAYS[o.day]} ${DATES[o.day]} · ${fmtT(o.start)}</span><span class="small">Interpreter: <b>${esc(it.name)}</b> · ${o.mode==='video'?'by video':'in person'}${n.past.includes(o.interp)?' · you’ve met before':''}</span><button class="btn pat sm" data-opt="${i}">Choose</button></div>`;}).join('')}
+    <button class="btn ghost sm" data-act="back">None of these work</button>`;
+  }else if(a.status==='requested'){
+    html+=`<p class="big">Almost done</p><div class="box pat"><b>${when(a.choice.day,a.choice.start)}</b><p class="small">Waiting for your interpreter to confirm. We’ll let you know in ASL video and text.</p></div>`;
+  }else{
+    const it=byId(a.interp),c=a.choice;
+    const head={booked:'You’re booked',reminded:'See you tomorrow',inprogress:a.mode==='video'?'Your interpreter has joined':'Your interpreter is here',completed:'How was your interpreter?',done:'Thank you'}[a.status];
+    html+=`<p class="big">${head}</p>
+    <div class="box pat"><div class="row" style="flex-wrap:nowrap"><span class="avatar">${it.id==='vri'?'VI':esc(it.name.split(' ').map(x=>x[0]).join(''))}</span><div><b>${esc(it.name)}</b><p class="small">${a.mode==='video'?'Joins by video':'Meets you in person'}</p></div></div>
+     <p style="margin-top:8px"><b>${DAY_FULL[c.day]} ${DATES[c.day]} · ${fmtT(c.start)}</b></p><p class="small">${esc(doc.name)} · ${esc(doc.room)}</p></div>`;
+    if(a.status==='completed')html+=`<div class="fb">${[[5,'😀','Great'],[4,'🙂','Good'],[3,'😐','Okay'],[2,'🙁','Poor'],[1,'😞','Bad']].map(([v,e,l])=>`<button data-fb="${v}" data-lbl="${l}"><span aria-hidden="true">${e}</span>${l}</button>`).join('')}</div>`;
+    if(a.status==='done')html+=`<p class="small muted">You rated it ${a.feedback}/5.${a.feedback>=4&&a.interp!=='vri'?` Next time we’ll ask for ${esc(it.name.split(' ')[0])} first.`:''}</p>`;
+  }
+  document.getElementById('pp').innerHTML=html;
+}
+function candHTML(day,start,selId){
+  const r=rank(day,start);
+  return `<div class="sec">${r.ok.slice(0,4).map((x,i)=>`<div class="cand ${x.it.id===selId?'top':''}"><span class="nm">#${i+1} ${esc(x.it.name)} <span class="muted small" style="font-weight:400">· ${x.mode==='video'?'video':'in person'}</span></span><span class="score"><span class="bar"><i style="width:${x.score}%"></i></span><b class="mono">${x.score}</b></span>${whyHTML(x.why)}</div>`).join('')||'<p class="small muted">Nobody eligible.</p>'}
+   ${r.ok.length>4?`<p class="small muted">+${r.ok.length-4} more eligible</p>`:''}
+   <details><summary>Excluded by hard rules (${r.no.length})</summary>${r.no.map(x=>`<div class="exrow"><b>${esc(x.it.name)}</b> <span>${x.ex.map(esc).join(' · ')}</span></div>`).join('')}</details></div>`;
+}
+function renderEngine(){
+  const a=A(),si=STAGES.findIndex(s=>s[0]===a.status);let html=`<div class="stages">${STAGES.map((s,i)=>`<span class="stg ${i<si?'done':i===si?'cur':''}">${s[1]}</span>`).join('')}</div>`;
+  if(a.status==='draft')html+=`<div class="box"><b>Waiting for a request.</b><p class="small muted">When Rosa sends her free times, SignSlot overlaps them with the doctor’s open slots and every interpreter’s confirmed availability.</p></div>`;
+  if(a.status==='options'){html+=`<div class="sec"><p class="eyebrow">Times offered to Rosa</p>${a.options.map((o,i)=>`<div class="cand ${i===0?'top':''}"><span class="nm">${when(o.day,o.start)} · ${esc(byId(o.interp).name)}</span><span class="score">${o.score!==null?`<span class="bar"><i style="width:${o.score}%"></i></span><b class="mono">${o.score}</b>`:''}</span>${whyHTML(o.why)}</div>`).join('')}</div>
+    <details><summary>Full ranking for the top time</summary><div style="margin-top:8px">${candHTML(a.options[0].day,a.options[0].start,a.options[0].interp)}</div></details>`;}
+  if(a.choice&&a.status!=='options'){
+    const it=a.interp?byId(a.interp):null;
+    html+=`<div class="box hl"><p class="eyebrow">Tracking</p><p><b>${when(a.choice.day,a.choice.start)}</b> · ${esc(DOC().name)}</p><p class="small">Interpreter: ${it?esc(it.name)+' ('+a.mode+')':'finding one'}${a.status==='requested'?' · <b>awaiting acceptance</b>':''}</p></div>`;
+    const ctl={booked:'Skip to 24 hours before',reminded:'Skip to appointment time',inprogress:'Skip to end of appointment'}[a.status];
+    if(ctl)html+=`<div class="sec"><button class="btn" data-act="advance">${ctl}</button>
+      ${a.status==='reminded'&&a.interp!=='vri'?'<button class="btn danger sm" data-act="noshow">Simulate: interpreter doesn’t show up</button>':''}
+      ${a.status==='inprogress'&&a.interp!=='vri'?'<button class="btn danger sm" data-act="mid">Simulate: interpreter leaves mid-appointment</button>':''}</div>`;
+    if(['requested','booked'].includes(a.status))html+=`<details><summary>Ranking for this time</summary><div style="margin-top:8px">${candHTML(a.choice.day,a.choice.start,a.interp)}</div></details>`;
+  }
+  const feed=S.log.slice().sort((x,y)=>y.t-x.t||y.seq-x.seq).slice(0,14);
+  html+=`<div class="sec"><p class="eyebrow">What SignSlot is doing</p><div class="feed">${feed.map(entryHTML).join('')}</div></div>`;
+  document.getElementById('pe').innerHTML=html;
+}
+function stdLabel(it){
+  const c=new Date(it.certExp+'T23:59')<new Date(2026,9,26)?`<span class="badt">Expired ${fmtDate(it.certExp)}</span>`:`<span class="ok">Valid</span> to ${fmtDate(it.certExp)}`;
+  const l=it.license.status==='active'?'<span class="ok">Active</span>':`<span class="badt">${it.license.status[0].toUpperCase()+it.license.status.slice(1)}</span>`;
+  const r=it.penalty?`<span class="${it.penalty.level==='end'?'badt':'wn'}">${it.penalty.level==='end'?'End':'Middle'} of list · ${it.penalty.cycles} cycle${it.penalty.cycles>1?'s':''}</span><br><span class="muted">${esc(it.penalty.reason)}</span>`:it.warnings?`<span class="wn">${it.warnings} warning${it.warnings>1?'s':''}</span>`:'<span class="ok">Good standing</span>';
+  return {c,l,r};
+}
+function renderInterp(){
+  const sel=document.getElementById('intSel');
+  if(!sel.options.length)sel.innerHTML=S.interpreters.map(it=>`<option value="${it.id}">${esc(it.name)}</option>`).join('');
+  sel.value=UI.interp;const it=byId(UI.interp),a=A(),st=stdLabel(it);
+  document.getElementById('intName').textContent=it.name;
+  let html='';
+  if(a.status==='requested'&&a.interp===it.id){const c=a.choice;
+    html+=`<div class="box warn"><p class="eyebrow">New request</p><p class="big">${when(c.day,c.start)}</p><p class="small">${esc(DOC().visit)} · ${a.mode==='video'?'by video':'in person, '+esc(DOC().room)} · ${DUR} min</p><p class="small muted">Patient’s needs: ASL${S.patient.needs.genderPref==='F'?', female interpreter preferred':''}. Name shared after you accept.</p>
+     <div class="row" style="margin-top:8px"><button class="btn" data-act="accept">Accept</button><button class="btn ghost" data-act="decline">Decline</button></div></div>`;}
+  const mine=it.bookings.slice().sort((x,y)=>x.day-y.day||x.s-y.s);
+  html+=`<div class="sec"><p class="eyebrow">Your bookings</p>${mine.length?mine.map(b=>{const isDemo=b.appt==='demo',canCancel=isDemo&&['booked','reminded'].includes(a.status);
+    return `<div class="box ${isDemo?'hl':''}"><b>${DAYS[b.day]} ${DATES[b.day]} · ${fmtT(b.s+BUF_BEFORE)}</b><p class="small">${isDemo?esc(DOC().room)+' · Rosa D.':'Lakeview · another patient'}</p>
+     ${canCancel?`<div class="row" style="margin-top:6px"><select id="cxSel" aria-label="When to cancel">${cancelOptions().map(o=>`<option value="${o.v}">${o.l}</option>`).join('')}</select><button class="btn danger sm" data-act="cancel">Can’t make it</button></div>`:''}</div>`;}).join(''):'<p class="small muted">No bookings yet.</p>'}</div>`;
+  html+=`<div class="sec"><p class="eyebrow">Tell us when you’re free</p>
+    <textarea id="availText" aria-label="Availability in your own words" placeholder="e.g. I’m free Monday and Wednesday mornings, not Thursday">${esc(UI.draft)}</textarea>
+    <div class="row"><button class="btn ghost sm mic ${UI.listening?'on':''}" data-act="mic">${ICON.mic}${UI.listening?'Stop':'Speak'}</button><button class="btn sm" data-act="parse">Read it back</button></div>
+    ${UI.hint?`<p class="hint ${UI.hintErr?'err':''}" aria-live="polite">${esc(UI.hint)}</p>`:''}
+    <button class="ex-btn">I’m free Monday and Wednesday mornings, not Thursday, and Friday afternoon video only</button>
+    <button class="ex-btn">Tuesday 9 to 3 in person, Thursday after one but not after four</button>`;
+  const rb=UI.readback;
+  if(rb&&rb.interp===it.id){const p=rb.result,items=[];
+    p.slots.forEach((s,i)=>items.push(`<li><span><b>${DAYS[s.day]}</b> ${fmtShort(s.s)}–${fmtShort(s.e)} · ${s.mode==='both'?'in person or video':s.mode==='video'?'video only':'in person only'}</span><button class="x" data-rm="${i}" aria-label="Remove">&times;</button></li>`));
+    p.off.forEach(d=>items.push(`<li class="off"><span><b>${DAYS[d]}</b> not available</span></li>`));
+    p.partial.forEach(x=>items.push(`<li class="off"><span><b>${DAYS[x.day]}</b> not ${fmtShort(x.s)}–${fmtShort(x.e)}</span></li>`));
+    it.bookings.filter(b=>p.mentioned.includes(b.day)&&!p.slots.some(s=>s.day===b.day&&s.s<=b.s&&s.e>=b.e)).forEach(b=>items.push(`<li class="warn"><span>You’re booked <b>${DAYS[b.day]} ${fmtShort(b.s+BUF_BEFORE)}</b>. Confirming flags it to the clinic.</span></li>`));
+    html+=`<div class="box"><p class="eyebrow">Here’s what I understood</p>${items.length?`<ul class="rb-list" style="margin-top:6px">${items.join('')}</ul>`:'<p class="hint err">I couldn’t find any days. Try “Monday 9 to 12”.</p>'}
+     ${p.unparsed.length?`<p class="hint" style="margin-top:6px">Not sure about: “${esc(p.unparsed.join('”, “'))}”</p>`:''}
+     ${p.mentioned.length?`<p class="hint" style="margin-top:6px">Only ${p.mentioned.map(d=>DAYS[d]).join(', ')} will change.</p><div class="row" style="margin-top:8px"><button class="btn sm" data-act="confirmAv">Confirm</button><button class="btn ghost sm" data-act="editAv">Edit</button></div>`:''}</div>`;}
+  html+=`</div>`;
+  const H0=h(8),H1=h(18),pct=m=>((Math.max(H0,Math.min(H1,m))-H0)/(H1-H0)*100);
+  let g='<div></div>'+DAYS.map(d=>`<div class="dh">${d}</div>`).join('')+`<div class="hours">${[8,12,16].map(x=>`<span style="top:${pct(h(x))}%">${x%12||12}${x>=12?'p':'a'}</span>`).join('')}</div>`;
+  for(let d=0;d<5;d++)g+=`<div class="daycol">`+it.slots.filter(s=>s.day===d).map(s=>`<div class="blk av" style="top:${pct(s.s)}%;height:${pct(s.e)-pct(s.s)}%">${s.mode==='video'?'video':s.mode==='in-person'?'in person':''}</div>`).join('')+it.bookings.filter(b=>b.day===d).map(b=>`<div class="blk bk" style="top:${pct(b.s)}%;height:${pct(b.e)-pct(b.s)}%"></div>`).join('')+`</div>`;
+  html+=`<div class="sec"><p class="eyebrow">This week</p><div class="week">${g}</div><p class="small muted">${esc(it.certNo)} · Certification ${st.c} · License ${st.l}</p><p class="small">Standing: ${st.r}</p></div>`;
+  document.getElementById('pi').innerHTML=html;
+}
+function renderClinic(){
+  const sel=document.getElementById('docSel');
+  if(!sel.options.length)sel.innerHTML=Object.values(S.doctors).map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('');
+  sel.value=UI.doctor;const doc=S.doctors[UI.doctor],a=A();
+  document.getElementById('docName').textContent=doc.dept;
+  let html='';
+  if(a.choice&&a.doctor===doc.id){const it=a.interp?byId(a.interp):null;
+    const st={requested:['warn','Interpreter not yet confirmed'],booked:['hl','ASL interpreter confirmed'],reminded:['hl','Reminders sent · interpreter reconfirmed'],inprogress:['good','In progress with interpreter'],completed:['good','Completed · record saved'],done:['good','Completed · record saved']}[a.status]||['','—'];
+    html+=`<div class="box ${st[0]}"><p class="eyebrow">Deaf patient · needs ASL</p><p><b>Rosa Delgado</b> · ${when(a.choice.day,a.choice.start)}</p><p class="small">${st[1]}${it?': '+esc(it.name)+' ('+a.mode+')':''}</p>
+     ${['completed','done'].includes(a.status)?'<p class="small" style="margin-top:6px">Effective communication documented (ADA / Section 1557). See the Audit log.</p>':''}</div>`;}
+  html+=`<div class="sec"><p class="eyebrow">${esc(doc.name)} · open slots this week</p><p class="small muted">Tap a slot to open or close it. SignSlot only offers open slots.</p>
+   <div class="legend"><span><i style="border:1px solid var(--cli)"></i>Open</span><span><i style="background:var(--cli-soft)"></i>Other patient</span><span><i style="background:var(--warn-soft);border:1px solid var(--warn)"></i>Held</span><span><i style="background:var(--accent)"></i>Rosa + interpreter</span></div></div>`;
+  for(let d=0;d<5;d++){const ss=doc.slots.filter(s=>s.day===d);if(!ss.length)continue;
+    html+=`<div class="day"><b class="small">${DAY_FULL[d]} ${DATES[d]}</b><div class="slots">${ss.map(s=>{const idx=doc.slots.indexOf(s);
+      const lbl=s.status==='held'?' held':s.status==='booked'?' Rosa D.':'';
+      return `<button class="slot ${s.status}" data-slot="${idx}" aria-label="${DAY_FULL[d]} ${fmtT(s.start)} ${s.status}">${fmtShort(s.start)}${lbl}</button>`;}).join('')}</div></div>`;}
+  document.getElementById('pc').innerHTML=html;
+}
+function renderRoster(){
+  document.getElementById('roster').innerHTML=`<tr><th>Interpreter</th><th>Certification</th><th>Illinois license</th><th>Skills</th><th>Works</th><th>Reliability</th><th>Booked</th></tr>`+
+  S.interpreters.map(x=>{const s=stdLabel(x);return `<tr><td><b>${esc(x.name)}</b><br><span class="muted">${esc(x.certNo)}</span></td><td>${s.c}</td><td>${s.l}</td><td>${x.specs.map(k=>SPEC[k]).join(', ')}</td><td>${x.modes.map(m=>m==='video'?'Video':'In person').join(', ')}${x.modes.includes('in-person')?`<br><span class="muted">${x.miles} mi</span>`:''}</td><td>${s.r}</td><td class="mono">${x.bookings.length}</td></tr>`;}).join('');
+}
+function renderLog(){
+  const F=[['all','All'],['agent','Agent'],['rule','Rule checks'],['patient','Patient'],['interp','Interpreters'],['clinic','Clinic'],['message','Messages'],['alert','Alerts'],['audit','Audit records']];
+  document.getElementById('filters').innerHTML=F.map(([k,l])=>`<button class="fbtn" data-filter="${k}" aria-pressed="${UI.filter===k}">${l}</button>`).join('');
+  const rows=S.log.filter(l=>UI.filter==='all'||l.kind===UI.filter).slice().sort((a,b)=>b.t-a.t||b.seq-a.seq);
+  document.getElementById('log').innerHTML=rows.map(l=>`<div class="logrow"><span class="mono small muted">${fmtClock(l.t)}</span><span class="kind k-${l.kind}">${KIND[l.kind]}</span><span class="txt">${esc(l.text)}</span></div>`).join('')||'<p class="muted">No entries.</p>';
+}
+function render(){
+  const keep={};['pp','pe','pi','pc'].forEach(id=>keep[id]=document.getElementById(id).scrollTop);
+  document.getElementById('clock').textContent=fmtClock(S.clock);
+  ['live','roster','log'].forEach(t=>{document.getElementById('v-'+t).hidden=UI.tab!==t;document.getElementById('tb-'+t).setAttribute('aria-selected',UI.tab===t);});
+  if(UI.tab==='live'){guide();renderPatient();renderEngine();renderInterp();renderClinic();}
+  if(UI.tab==='roster')renderRoster();
+  if(UI.tab==='log')renderLog();
+  ['pp','pe','pi','pc'].forEach(id=>document.getElementById(id).scrollTop=keep[id]);
+}
+
+// ---------- events ----------
+document.addEventListener('input',e=>{if(e.target.id==='availText')UI.draft=e.target.value;});
+document.addEventListener('change',e=>{
+  if(e.target.id==='intSel'){UI.interp=e.target.value;UI.readback=null;UI.hint='';render();}
+  if(e.target.id==='docSel'){UI.doctor=e.target.value;render();}
+});
+document.addEventListener('click',e=>{
+  const t=e.target.closest('button');if(!t)return;const a=A(),d=t.dataset,act=d.act;
+  if(d.tab)UI.tab=d.tab;
+  else if(d.doc){a.doctor=d.doc;UI.doctor=d.doc;}
+  else if(d.blk){const i=a.blocks.indexOf(d.blk);i<0?a.blocks.push(d.blk):a.blocks.splice(i,1);a.notice=null;}
+  else if(d.opt!==undefined)chooseOption(+d.opt);
+  else if(d.fb)giveFeedback(+d.fb,d.lbl);
+  else if(d.filter)UI.filter=d.filter;
+  else if(d.rm!==undefined)UI.readback.result.slots.splice(+d.rm,1);
+  else if(d.slot!==undefined){const s=S.doctors[UI.doctor].slots[+d.slot];if(s.status!=='open'&&s.status!=='closed')return;s.status=s.status==='open'?'closed':'open';addLog('clinic',`${S.doctors[UI.doctor].name} ${s.status==='open'?'opened':'closed'} ${when(s.day,s.start)}.`);}
+  else if(t.classList.contains('ex-btn')){UI.draft=t.textContent;doParse();return;}
+  else if(act==='find')findOptions();
+  else if(act==='back'){a.status='draft';a.options=[];addLog('patient','Rosa asked for different times.');}
+  else if(act==='accept')confirmBooking();
+  else if(act==='decline')decline();
+  else if(act==='cancel')cancelBooking(+document.getElementById('cxSel').value);
+  else if(act==='advance')advance();
+  else if(act==='mid')midProblem('mid');
+  else if(act==='noshow')midProblem('noshow');
+  else if(act==='parse'){doParse();return;}
+  else if(act==='confirmAv')confirmAv();
+  else if(act==='editAv')UI.readback=null;
+  else if(act==='mic'){toggleMic();return;}
+  else if(act==='asl')UI.aslNote=!UI.aslNote;
+  else if(act==='cycle')nextCycle();
+  else if(act==='reset'){if(rec&&UI.listening)rec.stop();init();}
+  else return;
+  render();
+});
+function doParse(){const txt=(UI.draft||'').trim();if(!txt){UI.hint='Say or type your availability first.';UI.hintErr=true;render();return;}UI.hint='';UI.hintErr=false;UI.readback={interp:UI.interp,result:parseAvailability(txt)};render();}
+function toggleMic(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){UI.hint='Voice input isn’t available in this browser. Type instead, or open the app file in Chrome.';UI.hintErr=true;render();return;}
+  if(UI.listening){rec.stop();return;}
+  rec=new SR();rec.lang='en-US';rec.interimResults=true;rec.continuous=false;
+  rec.onresult=ev=>{UI.draft=Array.from(ev.results).map(r=>r[0].transcript).join(' ');const ta=document.getElementById('availText');if(ta)ta.value=UI.draft;};
+  rec.onerror=ev=>{UI.hintErr=true;UI.hint=(ev.error==='not-allowed'||ev.error==='service-not-allowed')?'The microphone is blocked here. Type instead, or open the app file in Chrome to use your voice.':'Didn’t catch that. Try again or type it.';};
+  rec.onend=()=>{UI.listening=false;if(UI.draft.trim()&&!UI.hintErr)doParse();else render();};
+  try{rec.start();UI.listening=true;UI.hint='Listening…';UI.hintErr=false;}catch(err){UI.hint='Couldn’t start the microphone. Type instead.';UI.hintErr=true;}
+  render();
+}
+init();render();
+</script>
+
+</body>
+</html>
