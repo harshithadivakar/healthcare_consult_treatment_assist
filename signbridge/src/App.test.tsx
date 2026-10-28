@@ -1,9 +1,81 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import App from './App'
 import { getBslClipEmbedUrl, getBslVideoReference } from './data/bslVideos'
 import { medicalPhrases, phraseCategories } from './data/phrases'
+
+function renderConversationSupport() {
+  const result = render(<App />)
+  fireEvent.click(screen.getByRole('button', { name: /in-room conversation support/i }))
+  return result
+}
+
+describe('SignBridge care journey', () => {
+  it('shows the three-phase flow with patient, interpreter and doctor lanes on entry', () => {
+    render(<App />)
+    expect(screen.getByRole('heading', { name: /one portal for the whole appointment/i })).toBeInTheDocument()
+    for (const phase of [/pre-consultation/i, /^consultation$/i, /post-consultation/i, /rate and close/i]) {
+      expect(screen.getByRole('heading', { name: phase })).toBeInTheDocument()
+    }
+    expect(screen.getByText(/interpreter no-show/i)).toBeInTheDocument()
+    expect(screen.getByText(/7-day record window/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /request a qualified bsl interpreter/i })).toBeInTheDocument()
+  })
+
+  it('opens the patient view, sends a questionnaire answer and shows it to the doctor', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^patient view/i }))
+    expect(screen.getByRole('heading', { name: /hello, alex lewis/i })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: /choose interpreter/i }))
+    await user.click(screen.getByRole('button', { name: /choose tom/i }))
+
+    await user.click(screen.getByRole('tab', { name: /messages/i }))
+    expect(screen.getByText(/simulated recording/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /start recording/i }))
+    await user.click(screen.getByRole('button', { name: /stop recording/i }))
+    await user.click(screen.getByRole('button', { name: /send answers/i }))
+    expect(screen.getByText(/answers sent/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^doctor$/i }))
+    const alexRow = screen.getByRole('cell', { name: 'Alex Lewis' }).closest('[role="row"]') as HTMLElement
+    expect(within(alexRow).getByText('Tom Hughes')).toBeInTheDocument()
+    expect(within(alexRow).getByText('With interpreter')).toBeInTheDocument()
+  })
+
+  it('only lets patients book slots with a free interpreter', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^patient view/i }))
+    expect(screen.getByRole('button', { name: /no interpreter free/i })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /fri 30 oct.*13:45/i }))
+    await user.click(screen.getByRole('button', { name: /book this slot/i }))
+    expect(screen.getByText(/booked for fri 30 oct at 13:45/i)).toBeInTheDocument()
+  })
+
+  it('shows interpreter deadlines and adds an accepted task to the calendar', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^bsl interpreter view/i }))
+    expect(screen.getAllByText(/pre-consult deadline/i).length).toBeGreaterThan(0)
+    expect(screen.getByText(/how matching works/i)).toBeInTheDocument()
+    expect(screen.queryByText('Patient B.O. with Dr Shah')).not.toBeInTheDocument()
+    await user.click(screen.getAllByRole('button', { name: /^accept$/i })[1])
+    expect(screen.getByText('Patient B.O. with Dr Shah')).toBeInTheDocument()
+  })
+
+  it('lets the doctor read interpretations and send a message', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^doctor view/i }))
+    expect(screen.getByRole('heading', { name: /interpretation: sam morgan/i })).toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: /message/i }), 'Please bring your blood pressure readings.')
+    await user.click(screen.getByRole('button', { name: /^send$/i }))
+    expect(screen.getByText('Please bring your blood pressure readings.')).toBeInTheDocument()
+  })
+})
 
 describe('SignBridge prototype', () => {
   beforeEach(() => {
@@ -11,7 +83,7 @@ describe('SignBridge prototype', () => {
   })
 
   it('shows the clinical limitation and communication preferences on entry', () => {
-    render(<App />)
+    renderConversationSupport()
     expect(screen.getByRole('heading', { name: /how would you like to communicate/i })).toBeInTheDocument()
     expect(screen.getByText(/not for diagnosis, consent, medication decisions or clinical use/i)).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: /large text/i })).toBeInTheDocument()
@@ -26,7 +98,7 @@ describe('SignBridge prototype', () => {
 
   it('keeps header preferences in sync and opens the full conversation directly', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    renderConversationSupport()
 
     const bslPreference = screen.getByRole('checkbox', { name: /^bsl$/i })
     await user.click(bslPreference)
@@ -42,7 +114,7 @@ describe('SignBridge prototype', () => {
 
   it('hands an interpreter request to the SignSlot scheduling demo', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    renderConversationSupport()
     await user.click(screen.getByRole('button', { name: /request a qualified bsl interpreter/i }))
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText(/interpreter connection simulated/i)).toBeInTheDocument()
@@ -184,7 +256,7 @@ describe('SignBridge prototype', () => {
 
   it('keeps a manual fallback when the university video is offline', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    renderConversationSupport()
     window.dispatchEvent(new Event('offline'))
     await user.click(screen.getByRole('button', { name: /^conversation$/i }))
     await user.click(screen.getByRole('button', { name: /go back/i }))

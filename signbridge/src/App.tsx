@@ -39,8 +39,12 @@ import {
   X,
 } from '@phosphor-icons/react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CareJourney } from './components/CareJourney'
 import { Modal } from './components/Modal'
+import { initialPortalState, RolePortal } from './components/RoleViews'
+import type { PortalState } from './components/RoleViews'
 import { StatusBadge } from './components/StatusBadge'
+import type { Role } from './data/careJourney'
 import { formatClipTime, getBslClipEmbedUrl, getBslVideoReference } from './data/bslVideos'
 import { medicalPhrases, phraseCategories } from './data/phrases'
 import { useSpeechRecognition } from './hooks/useSpeechRecognition'
@@ -53,7 +57,7 @@ import type {
   SymptomSummary,
 } from './types'
 
-type Screen = 'onboarding' | 'journey' | 'conversation' | 'privacy'
+type Screen = 'home' | 'role' | 'onboarding' | 'journey' | 'conversation' | 'privacy'
 type ModalName = 'interpreter' | 'erase' | 'phrase-library' | 'symptoms' | 'camera' | 'bsl-video' | 'settings' | null
 
 const defaultPreferences: Preferences = {
@@ -96,8 +100,17 @@ function findCuratedPhrase(text: string, phraseId?: string | null) {
   )
 }
 
+const backTargets: Partial<Record<Screen, Screen>> = {
+  role: 'home',
+  onboarding: 'home',
+  journey: 'onboarding',
+  conversation: 'journey',
+}
+
 function App() {
-  const [screen, setScreen] = useState<Screen>('onboarding')
+  const [screen, setScreen] = useState<Screen>('home')
+  const [role, setRole] = useState<Role>('patient')
+  const [portal, setPortal] = useState<PortalState>(initialPortalState)
   const [modal, setModal] = useState<ModalName>(null)
   const [preferences, setPreferences] = useState(defaultPreferences)
   const [journey, setJourney] = useState<Journey | null>(null)
@@ -245,6 +258,7 @@ function App() {
     setBslPhraseId(null)
     setPatientReply('')
     setJourney(null)
+    setPortal(initialPortalState)
     setModal(null)
     setScreen('onboarding')
     setToast('Session ended. All conversation data was erased from memory.')
@@ -267,6 +281,11 @@ function App() {
 
   const hasSession = screen === 'conversation' || messages.length > 0
 
+  const openConversation = () => {
+    if (hasSession && journey) setScreen('conversation')
+    else chooseJourney('Reception')
+  }
+
   return (
     <div className="app-shell">
       <Header
@@ -276,17 +295,29 @@ function App() {
         hasSession={hasSession}
         preferences={preferences}
         onPreferencesChange={setPreferences}
-        onBack={() => setScreen(screen === 'conversation' ? 'journey' : 'onboarding')}
-        onConversation={() => {
-          if (hasSession && journey) setScreen('conversation')
-          else chooseJourney('Reception')
-        }}
+        onBack={() => setScreen(backTargets[screen] ?? 'home')}
+        onConversation={openConversation}
         onPrivacy={() => setScreen('privacy')}
         onSettings={() => setModal('settings')}
         onErase={() => setModal('erase')}
       />
 
       <main id="main-content" tabIndex={-1}>
+        {screen === 'home' && (
+          <CareJourney
+            onOpenRole={(selection) => { setRole(selection); setScreen('role') }}
+            onStartConversation={() => setScreen('onboarding')}
+          />
+        )}
+        {screen === 'role' && (
+          <RolePortal
+            role={role}
+            state={portal}
+            onStateChange={setPortal}
+            onSwitchRole={setRole}
+            onStartConversation={openConversation}
+          />
+        )}
         {screen === 'onboarding' && (
           <Onboarding
             preferences={preferences}
@@ -330,7 +361,7 @@ function App() {
             onCancelEdit={() => setEditMessageId(null)}
           />
         )}
-        {screen === 'privacy' && <PrivacyPage onBack={() => setScreen(hasSession ? 'conversation' : 'onboarding')} />}
+        {screen === 'privacy' && <PrivacyPage onBack={() => setScreen(hasSession ? 'conversation' : 'home')} />}
       </main>
 
       <button className="interpreter-fab" onClick={() => setModal('interpreter')}>
@@ -403,7 +434,7 @@ function Header({
   return (
     <header className="topbar">
       <div className="topbar-primary">
-        {screen !== 'onboarding' && (
+        {screen !== 'home' && (
           <button className="icon-button topbar-back" onClick={onBack} aria-label="Go back">
             <ArrowLeft size={24} weight="bold" />
           </button>
