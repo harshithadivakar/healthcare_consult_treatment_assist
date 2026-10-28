@@ -190,6 +190,7 @@ describe('medical phrase library data', () => {
         expect(typeof phrase.bslClipEnd).toBe('number')
         expect(phrase.bslClipStart).toBeGreaterThanOrEqual(0)
         expect(phrase.bslClipEnd).toBeGreaterThan(phrase.bslClipStart ?? 0)
+        expect((phrase.bslClipEnd ?? 0) - (phrase.bslClipStart ?? 0)).toBeLessThanOrEqual(20)
       }
     }
   })
@@ -202,7 +203,7 @@ describe('medical phrase library data', () => {
     const reference = getBslVideoReference(painPhrase?.bslVideoId)
     expect(reference).toBeDefined()
     const url = getBslClipEmbedUrl(reference!, painPhrase!.bslClipStart!, painPhrase!.bslClipEnd!)
-    expect(url).toContain('kalturaSeekFrom=0')
-    expect(url).toContain('kalturaClipTo=20')
+    expect(url).toContain('kalturaSeekFrom=7')
+    expect(url).toContain('kalturaClipTo=18')
   })
 })
