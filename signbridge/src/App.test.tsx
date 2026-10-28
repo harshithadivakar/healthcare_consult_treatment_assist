@@ -87,7 +87,29 @@ describe('SignBridge prototype', () => {
     expect(screen.getByRole('heading', { name: /how would you like to communicate/i })).toBeInTheDocument()
     expect(screen.getByText(/not for diagnosis, consent, medication decisions or clinical use/i)).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: /large text/i })).toBeInTheDocument()
+    const headerPreferences = screen.getByRole('group', { name: /communication preferences/i })
+    expect(within(headerPreferences).getByRole('checkbox', { name: /^bsl$/i })).toBeChecked()
+    expect(within(headerPreferences).getByRole('checkbox', { name: /live captions/i })).toBeChecked()
+    expect(within(headerPreferences).getByRole('checkbox', { name: /typed conversation/i })).toBeChecked()
+    expect(screen.getByRole('button', { name: /^conversation$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /continue/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /request a qualified bsl interpreter/i })).toBeInTheDocument()
+  })
+
+  it('keeps header preferences in sync and opens the full conversation directly', async () => {
+    const user = userEvent.setup()
+    renderConversationSupport()
+
+    const bslPreference = screen.getByRole('checkbox', { name: /^bsl$/i })
+    await user.click(bslPreference)
+    expect(bslPreference).not.toBeChecked()
+
+    const openButton = screen.getByRole('button', { name: /^conversation$/i })
+    await user.click(openButton)
+    expect(screen.getByRole('heading', { name: /prepare a message/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /message to understand/i })).toBeInTheDocument()
+    expect(screen.getByText('Hello. How would you prefer to communicate today?')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^conversation$/i })).toHaveAttribute('aria-current', 'page')
   })
 
   it('hands an interpreter request to the SignSlot scheduling demo', async () => {
@@ -100,10 +122,11 @@ describe('SignBridge prototype', () => {
     expect(link).toHaveAttribute('href', '/signslot.html')
   })
 
-  it('opens all three pathway choices after onboarding', async () => {
+  it('keeps all three pathway choices available from the conversation', async () => {
     const user = userEvent.setup()
-    renderConversationSupport()
-    await user.click(screen.getByRole('button', { name: /continue/i }))
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^conversation$/i }))
+    await user.click(screen.getByRole('button', { name: /go back/i }))
     expect(screen.getByRole('button', { name: /reception/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /consultation/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /emergency/i })).toBeInTheDocument()
@@ -111,12 +134,12 @@ describe('SignBridge prototype', () => {
 
   it('supports keyboard activation and a session-only dark theme', async () => {
     const user = userEvent.setup()
-    renderConversationSupport()
-    const continueButton = screen.getByRole('button', { name: /continue/i })
-    continueButton.focus()
-    expect(continueButton).toHaveFocus()
+    render(<App />)
+    const conversationButton = screen.getByRole('button', { name: /^conversation$/i })
+    conversationButton.focus()
+    expect(conversationButton).toHaveFocus()
     await user.keyboard('{Enter}')
-    expect(screen.getByRole('heading', { name: /where are you today/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /prepare a message/i })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /display/i }))
     await user.click(screen.getByRole('checkbox', { name: /dark mode/i }))
@@ -125,8 +148,9 @@ describe('SignBridge prototype', () => {
 
   it('supports a typed professional message and patient confirmation', async () => {
     const user = userEvent.setup()
-    renderConversationSupport()
-    await user.click(screen.getByRole('button', { name: /continue/i }))
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^conversation$/i }))
+    await user.click(screen.getByRole('button', { name: /go back/i }))
     await user.click(screen.getByRole('button', { name: /consultation/i }))
 
     const input = screen.getByLabelText(/message in plain english/i)
@@ -141,9 +165,8 @@ describe('SignBridge prototype', () => {
 
   it('erases a session only after confirmation', async () => {
     const user = userEvent.setup()
-    renderConversationSupport()
-    await user.click(screen.getByRole('button', { name: /continue/i }))
-    await user.click(screen.getByRole('button', { name: /reception/i }))
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^conversation$/i }))
     await user.click(screen.getByRole('button', { name: /end session/i }))
     const dialog = screen.getByRole('dialog', { name: /end and erase session/i })
     await user.click(within(dialog).getByRole('button', { name: /^end and erase$/i }))
@@ -153,8 +176,9 @@ describe('SignBridge prototype', () => {
 
   it('labels simulated BSL recognition clearly', async () => {
     const user = userEvent.setup()
-    renderConversationSupport()
-    await user.click(screen.getByRole('button', { name: /continue/i }))
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^conversation$/i }))
+    await user.click(screen.getByRole('button', { name: /go back/i }))
     await user.click(screen.getByRole('button', { name: /consultation/i }))
     await user.click(screen.getByRole('button', { name: /simulated bsl camera/i }))
     expect(screen.getByText('Simulated BSL recognition for prototype demonstration.')).toBeInTheDocument()
@@ -163,8 +187,9 @@ describe('SignBridge prototype', () => {
 
   it('shows an attributed university excerpt for a curated phrase', async () => {
     const user = userEvent.setup()
-    renderConversationSupport()
-    await user.click(screen.getByRole('button', { name: /continue/i }))
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^conversation$/i }))
+    await user.click(screen.getByRole('button', { name: /go back/i }))
     await user.click(screen.getByRole('button', { name: /consultation/i }))
     await user.click(screen.getByRole('button', { name: /medical phrases/i }))
 
@@ -183,8 +208,9 @@ describe('SignBridge prototype', () => {
 
   it('previews the video excerpt directly from the phrase library', async () => {
     const user = userEvent.setup()
-    renderConversationSupport()
-    await user.click(screen.getByRole('button', { name: /continue/i }))
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^conversation$/i }))
+    await user.click(screen.getByRole('button', { name: /go back/i }))
     await user.click(screen.getByRole('button', { name: /consultation/i }))
     await user.click(screen.getByRole('button', { name: /medical phrases/i }))
 
@@ -201,8 +227,9 @@ describe('SignBridge prototype', () => {
 
   it('links an exact curated phrase even when it was typed manually', async () => {
     const user = userEvent.setup()
-    renderConversationSupport()
-    await user.click(screen.getByRole('button', { name: /continue/i }))
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^conversation$/i }))
+    await user.click(screen.getByRole('button', { name: /go back/i }))
     await user.click(screen.getByRole('button', { name: /consultation/i }))
     await user.type(screen.getByLabelText(/message in plain english/i), 'How do you feel?')
 
@@ -215,8 +242,9 @@ describe('SignBridge prototype', () => {
 
   it('refuses to infer BSL for unmatched typed wording', async () => {
     const user = userEvent.setup()
-    renderConversationSupport()
-    await user.click(screen.getByRole('button', { name: /continue/i }))
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^conversation$/i }))
+    await user.click(screen.getByRole('button', { name: /go back/i }))
     await user.click(screen.getByRole('button', { name: /consultation/i }))
     await user.type(screen.getByLabelText(/message in plain english/i), 'Please describe what happened.')
     await user.click(screen.getByRole('button', { name: /show to patient/i }))
@@ -230,7 +258,8 @@ describe('SignBridge prototype', () => {
     const user = userEvent.setup()
     renderConversationSupport()
     window.dispatchEvent(new Event('offline'))
-    await user.click(screen.getByRole('button', { name: /continue/i }))
+    await user.click(screen.getByRole('button', { name: /^conversation$/i }))
+    await user.click(screen.getByRole('button', { name: /go back/i }))
     await user.click(screen.getByRole('button', { name: /consultation/i }))
     await user.click(screen.getByRole('button', { name: /medical phrases/i }))
     const library = screen.getByRole('dialog', { name: /medical phrase library/i })
@@ -262,6 +291,7 @@ describe('medical phrase library data', () => {
         expect(typeof phrase.bslClipEnd).toBe('number')
         expect(phrase.bslClipStart).toBeGreaterThanOrEqual(0)
         expect(phrase.bslClipEnd).toBeGreaterThan(phrase.bslClipStart ?? 0)
+        expect((phrase.bslClipEnd ?? 0) - (phrase.bslClipStart ?? 0)).toBeLessThanOrEqual(20)
       }
     }
   })
@@ -274,7 +304,13 @@ describe('medical phrase library data', () => {
     const reference = getBslVideoReference(painPhrase?.bslVideoId)
     expect(reference).toBeDefined()
     const url = getBslClipEmbedUrl(reference!, painPhrase!.bslClipStart!, painPhrase!.bslClipEnd!)
-    expect(url).toContain('kalturaSeekFrom=0')
-    expect(url).toContain('kalturaClipTo=20')
+    expect(url).toContain('kalturaSeekFrom=7')
+    expect(url).toContain('kalturaClipTo=18')
+  })
+
+  it('keeps “How can I help you?” inside its own teaching prompt', () => {
+    const helpPhrase = medicalPhrases.find((phrase) => phrase.id === 'comm-5')
+    expect(helpPhrase?.bslClipStart).toBe(437)
+    expect(helpPhrase?.bslClipEnd).toBe(442)
   })
 })

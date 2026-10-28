@@ -281,6 +281,11 @@ function App() {
 
   const hasSession = screen === 'conversation' || messages.length > 0
 
+  const openConversation = () => {
+    if (hasSession && journey) setScreen('conversation')
+    else chooseJourney('Reception')
+  }
+
   return (
     <div className="app-shell">
       <Header
@@ -288,7 +293,10 @@ function App() {
         journey={journey}
         isOnline={isOnline}
         hasSession={hasSession}
+        preferences={preferences}
+        onPreferencesChange={setPreferences}
         onBack={() => setScreen(backTargets[screen] ?? 'home')}
+        onConversation={openConversation}
         onPrivacy={() => setScreen('privacy')}
         onSettings={() => setModal('settings')}
         onErase={() => setModal('erase')}
@@ -307,14 +315,13 @@ function App() {
             state={portal}
             onStateChange={setPortal}
             onSwitchRole={setRole}
-            onStartConversation={() => setScreen('onboarding')}
+            onStartConversation={openConversation}
           />
         )}
         {screen === 'onboarding' && (
           <Onboarding
             preferences={preferences}
             onChange={setPreferences}
-            onContinue={() => setScreen('journey')}
           />
         )}
         {screen === 'journey' && <JourneySelection onChoose={chooseJourney} />}
@@ -396,13 +403,34 @@ interface HeaderProps {
   journey: Journey | null
   isOnline: boolean
   hasSession: boolean
+  preferences: Preferences
+  onPreferencesChange: (preferences: Preferences) => void
   onBack: () => void
+  onConversation: () => void
   onPrivacy: () => void
   onSettings: () => void
   onErase: () => void
 }
 
-function Header({ screen, journey, isOnline, hasSession, onBack, onPrivacy, onSettings, onErase }: HeaderProps) {
+function Header({
+  screen,
+  journey,
+  isOnline,
+  hasSession,
+  preferences,
+  onPreferencesChange,
+  onBack,
+  onConversation,
+  onPrivacy,
+  onSettings,
+  onErase,
+}: HeaderProps) {
+  const communicationPreferences: Array<{ key: 'bsl' | 'captions' | 'typed'; label: string; icon: typeof HandPalm }> = [
+    { key: 'bsl', label: 'BSL', icon: HandPalm },
+    { key: 'captions', label: 'Live captions', icon: Ear },
+    { key: 'typed', label: 'Typed conversation', icon: Keyboard },
+  ]
+
   return (
     <header className="topbar">
       <div className="topbar-primary">
@@ -418,6 +446,29 @@ function Header({ screen, journey, isOnline, hasSession, onBack, onPrivacy, onSe
         {journey && screen === 'conversation' && <span className="journey-label">{journey}</span>}
       </div>
       <nav className="topbar-actions" aria-label="Utility navigation">
+        {screen === 'onboarding' && (
+          <fieldset className="header-preferences">
+            <legend className="visually-hidden">Communication preferences</legend>
+            {communicationPreferences.map(({ key, label, icon: Icon }) => (
+              <label className="header-preference" key={key}>
+                <input
+                  type="checkbox"
+                  checked={preferences[key]}
+                  onChange={(event) => onPreferencesChange({ ...preferences, [key]: event.target.checked })}
+                />
+                <Icon size={19} weight="bold" aria-hidden="true" />
+                <span>{label}</span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        <button
+          className={`utility-button conversation-button${screen === 'conversation' ? ' conversation-button-current' : ''}`}
+          onClick={onConversation}
+          aria-current={screen === 'conversation' ? 'page' : undefined}
+        >
+          <ChatCircleText size={20} />Conversation
+        </button>
         <span className="network-status" aria-live="polite">
           {isOnline ? <WifiHigh size={20} /> : <WifiSlash size={20} />}
           {isOnline ? 'Online' : 'Offline mode'}
@@ -430,15 +481,11 @@ function Header({ screen, journey, isOnline, hasSession, onBack, onPrivacy, onSe
   )
 }
 
-function Onboarding({ preferences, onChange, onContinue }: {
+function Onboarding({ preferences, onChange }: {
   preferences: Preferences
   onChange: (preferences: Preferences) => void
-  onContinue: () => void
 }) {
-  const options: Array<{ key: keyof Preferences; label: string; detail: string; icon: typeof HandPalm }> = [
-    { key: 'bsl', label: 'British Sign Language', detail: 'Show attributed BSL video excerpts for curated phrases.', icon: HandPalm },
-    { key: 'captions', label: 'Live captions', detail: 'Show spoken words as editable text when the browser supports it.', icon: Ear },
-    { key: 'typed', label: 'Typed conversation', detail: 'Keep the keyboard available on both sides of the conversation.', icon: Keyboard },
+  const options: Array<{ key: 'largeText' | 'highContrast'; label: string; detail: string; icon: typeof HandPalm }> = [
     { key: 'largeText', label: 'Large text', detail: 'Increase text size throughout the application.', icon: TextAa },
     { key: 'highContrast', label: 'High contrast', detail: 'Use stronger borders and colour contrast.', icon: PersonArmsSpread },
   ]
@@ -448,14 +495,14 @@ function Onboarding({ preferences, onChange, onContinue }: {
       <div className="onboarding-intro">
         <span className="prototype-kicker">Accessible conversation support</span>
         <h1>How would you like to communicate?</h1>
-        <p>Choose any options that help. You can change them during this demonstration.</p>
+        <p>Choose BSL, live captions or typed conversation in the top bar. You can change them during this demonstration.</p>
         <div className="safety-notice" role="note">
           <WarningOctagon size={26} weight="fill" />
           <p><strong>Student prototype</strong><br />Not for diagnosis, consent, medication decisions or clinical use.</p>
         </div>
       </div>
       <div className="preference-panel" aria-labelledby="preference-heading">
-        <h2 id="preference-heading">Communication preferences</h2>
+        <h2 id="preference-heading">Display preferences</h2>
         <div className="preference-list">
           {options.map(({ key, label, detail, icon: Icon }) => (
             <label className="preference-option" key={key}>
@@ -470,9 +517,6 @@ function Onboarding({ preferences, onChange, onContinue }: {
             </label>
           ))}
         </div>
-        <button className="primary-button continue-button" onClick={onContinue}>
-          Continue <ArrowRight size={22} weight="bold" />
-        </button>
       </div>
     </section>
   )
@@ -805,7 +849,7 @@ function BslVideoExperience({ message, phraseId, isOnline, onClose, onInterprete
     >
       <div className="bsl-safety-strip" role="note">
         <WarningOctagon size={24} weight="fill" />
-        <p><strong>Educational reference — not validated for clinical use.</strong> This excerpt has not been independently validated as a safe clinical translation. Confirm understanding and use a qualified interpreter for high-risk communication.</p>
+        <p><strong>Educational reference - not validated for clinical use.</strong> This excerpt has not been independently validated as a safe clinical translation. Confirm understanding and use a qualified interpreter for high-risk communication.</p>
       </div>
 
       <div className="bsl-experience-grid">
@@ -816,7 +860,7 @@ function BslVideoExperience({ message, phraseId, isOnline, onClose, onInterprete
             <div className="source-video-frame">
               <iframe
                 src={getBslClipEmbedUrl(reference, clipStart, clipEnd)}
-                title={`${matchingPhrase.text} — University of Edinburgh BSL video excerpt`}
+                title={`${matchingPhrase.text} - University of Edinburgh BSL video excerpt`}
                 allow="autoplay; fullscreen; encrypted-media"
                 allowFullScreen
                 loading="lazy"
@@ -838,7 +882,7 @@ function BslVideoExperience({ message, phraseId, isOnline, onClose, onInterprete
           <h3 id="phrase-context-title">Selected English phrase</h3>
           <p className="phrase-display">{matchingPhrase.text}</p>
           <dl className="clip-details">
-            <div><dt>Excerpt</dt><dd>{formatClipTime(clipStart)}–{formatClipTime(clipEnd)}</dd></div>
+            <div><dt>Excerpt</dt><dd>{formatClipTime(clipStart)}-{formatClipTime(clipEnd)}</dd></div>
             <div><dt>Category</dt><dd>{matchingPhrase.category}</dd></div>
             <div><dt>Risk</dt><dd>{matchingPhrase.risk}</dd></div>
           </dl>
@@ -882,6 +926,7 @@ function SettingsModal({ preferences, onChange, onClose }: { preferences: Prefer
         <label><span><Moon size={24} /><span><strong>Dark mode</strong><small>Use the dark colour theme for this session.</small></span></span><input type="checkbox" checked={preferences.darkMode} onChange={(event) => onChange({ ...preferences, darkMode: event.target.checked })} /></label>
         <label><span><HandPalm size={24} /><span><strong>BSL preference</strong><small>Show attributed BSL video excerpts for curated phrases.</small></span></span><input type="checkbox" checked={preferences.bsl} onChange={(event) => onChange({ ...preferences, bsl: event.target.checked })} /></label>
         <label><span><Ear size={24} /><span><strong>Live captions</strong><small>Use browser speech input when available.</small></span></span><input type="checkbox" checked={preferences.captions} onChange={(event) => onChange({ ...preferences, captions: event.target.checked })} /></label>
+        <label><span><Keyboard size={24} /><span><strong>Typed conversation</strong><small>Keep the keyboard available for both sides of the conversation.</small></span></span><input type="checkbox" checked={preferences.typed} onChange={(event) => onChange({ ...preferences, typed: event.target.checked })} /></label>
       </div>
     </Modal>
   )
