@@ -29,8 +29,6 @@ import {
   SignOut,
   Siren,
   SlidersHorizontal,
-  SpeakerHigh,
-  SpeakerSlash,
   Stethoscope,
   TextAa,
   Trash,
@@ -56,7 +54,7 @@ import type {
 } from './types'
 
 type Screen = 'onboarding' | 'journey' | 'conversation' | 'privacy'
-type ModalName = 'interpreter' | 'erase' | 'phrase-library' | 'symptoms' | 'camera' | 'bsl-video' | 'settings' | 'text-to-speech' | null
+type ModalName = 'interpreter' | 'erase' | 'phrase-library' | 'symptoms' | 'camera' | 'bsl-video' | 'settings' | null
 
 const defaultPreferences: Preferences = {
   bsl: true,
@@ -279,7 +277,10 @@ function App() {
         preferences={preferences}
         onPreferencesChange={setPreferences}
         onBack={() => setScreen(screen === 'conversation' ? 'journey' : 'onboarding')}
-        onTextToSpeech={() => setModal('text-to-speech')}
+        onConversation={() => {
+          if (hasSession && journey) setScreen('conversation')
+          else chooseJourney('Reception')
+        }}
         onPrivacy={() => setScreen('privacy')}
         onSettings={() => setModal('settings')}
         onErase={() => setModal('erase')}
@@ -290,7 +291,6 @@ function App() {
           <Onboarding
             preferences={preferences}
             onChange={setPreferences}
-            onContinue={() => setScreen('journey')}
           />
         )}
         {screen === 'journey' && <JourneySelection onChoose={chooseJourney} />}
@@ -363,7 +363,6 @@ function App() {
       {modal === 'settings' && (
         <SettingsModal preferences={preferences} onChange={setPreferences} onClose={() => setModal(null)} />
       )}
-      {modal === 'text-to-speech' && <TextToSpeechModal onClose={() => setModal(null)} />}
     </div>
   )
 }
@@ -376,7 +375,7 @@ interface HeaderProps {
   preferences: Preferences
   onPreferencesChange: (preferences: Preferences) => void
   onBack: () => void
-  onTextToSpeech: () => void
+  onConversation: () => void
   onPrivacy: () => void
   onSettings: () => void
   onErase: () => void
@@ -390,7 +389,7 @@ function Header({
   preferences,
   onPreferencesChange,
   onBack,
-  onTextToSpeech,
+  onConversation,
   onPrivacy,
   onSettings,
   onErase,
@@ -432,8 +431,12 @@ function Header({
             ))}
           </fieldset>
         )}
-        <button className="utility-button text-to-speech-button" onClick={onTextToSpeech}>
-          <SpeakerHigh size={20} />Text to speech
+        <button
+          className={`utility-button conversation-button${screen === 'conversation' ? ' conversation-button-current' : ''}`}
+          onClick={onConversation}
+          aria-current={screen === 'conversation' ? 'page' : undefined}
+        >
+          <ChatCircleText size={20} />Conversation
         </button>
         <span className="network-status" aria-live="polite">
           {isOnline ? <WifiHigh size={20} /> : <WifiSlash size={20} />}
@@ -447,10 +450,9 @@ function Header({
   )
 }
 
-function Onboarding({ preferences, onChange, onContinue }: {
+function Onboarding({ preferences, onChange }: {
   preferences: Preferences
   onChange: (preferences: Preferences) => void
-  onContinue: () => void
 }) {
   const options: Array<{ key: 'largeText' | 'highContrast'; label: string; detail: string; icon: typeof HandPalm }> = [
     { key: 'largeText', label: 'Large text', detail: 'Increase text size throughout the application.', icon: TextAa },
@@ -484,9 +486,6 @@ function Onboarding({ preferences, onChange, onContinue }: {
             </label>
           ))}
         </div>
-        <button className="primary-button continue-button" onClick={onContinue}>
-          Continue <ArrowRight size={22} weight="bold" />
-        </button>
       </div>
     </section>
   )
@@ -883,118 +882,6 @@ function EraseModal({ onClose, onErase }: { onClose: () => void; onErase: () => 
   return (
     <Modal title="End and erase session?" description="This removes all messages and selections held in memory on this device." onClose={onClose} actions={<><button className="text-button" onClick={onClose}>Keep session</button><button className="danger-button" onClick={onErase}><Trash size={20} />End and erase</button></>}>
       <div className="erase-summary"><Trash size={46} weight="duotone" /><p>This cannot be undone. No copy is kept by the prototype.</p></div>
-    </Modal>
-  )
-}
-
-function TextToSpeechModal({ onClose }: { onClose: () => void }) {
-  const [speaker, setSpeaker] = useState<'professional' | 'patient'>('professional')
-  const [text, setText] = useState('')
-  const [speechStatus, setSpeechStatus] = useState<'idle' | 'speaking'>('idle')
-  const isSupported = typeof window !== 'undefined'
-    && typeof window.speechSynthesis !== 'undefined'
-    && typeof window.SpeechSynthesisUtterance === 'function'
-
-  const stopSpeaking = useCallback(() => {
-    if (isSupported) window.speechSynthesis.cancel()
-    setSpeechStatus('idle')
-  }, [isSupported])
-
-  useEffect(() => () => {
-    if (isSupported) window.speechSynthesis.cancel()
-  }, [isSupported])
-
-  const speakText = () => {
-    const message = text.trim()
-    if (!isSupported || !message) return
-
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(message)
-    utterance.lang = 'en-GB'
-    utterance.rate = 0.95
-    utterance.onend = () => setSpeechStatus('idle')
-    utterance.onerror = () => setSpeechStatus('idle')
-    window.speechSynthesis.speak(utterance)
-    setSpeechStatus('speaking')
-  }
-
-  const closeDialog = () => {
-    stopSpeaking()
-    onClose()
-  }
-
-  return (
-    <Modal
-      title="Text to speech"
-      description="Type a message, check the wording together, then play it aloud using this device."
-      onClose={closeDialog}
-      actions={(
-        <>
-          <button className="secondary-button" onClick={stopSpeaking} disabled={speechStatus !== 'speaking'}>
-            <SpeakerSlash size={20} />Stop
-          </button>
-          <button className="primary-button" onClick={speakText} disabled={!isSupported || !text.trim()}>
-            <SpeakerHigh size={20} />Speak text
-          </button>
-        </>
-      )}
-    >
-      <div className="text-to-speech-layout">
-        <fieldset className="speaker-choice">
-          <legend>Who is speaking?</legend>
-          <label>
-            <input
-              type="radio"
-              name="text-to-speech-speaker"
-              value="professional"
-              checked={speaker === 'professional'}
-              onChange={() => setSpeaker('professional')}
-            />
-            Healthcare professional
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="text-to-speech-speaker"
-              value="patient"
-              checked={speaker === 'patient'}
-              onChange={() => setSpeaker('patient')}
-            />
-            Patient
-          </label>
-        </fieldset>
-
-        <label className="text-to-speech-input">
-          <span>Text to read aloud</span>
-          <textarea
-            rows={4}
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            placeholder="Type the message here"
-            data-modal-autofocus
-          />
-        </label>
-
-        <section className="speech-preview" aria-labelledby="speech-preview-title">
-          <div className="speech-preview-heading">
-            <strong id="speech-preview-title">Conversation preview</strong>
-            <span aria-live="polite">{speechStatus === 'speaking' ? 'Speaking now' : 'Ready'}</span>
-          </div>
-          <div className={`speech-preview-bubble speech-preview-${speaker}`}>
-            <small>{speaker === 'professional' ? 'Healthcare professional' : 'Patient'}</small>
-            <p>{text.trim() || 'The typed message will remain visible here.'}</p>
-          </div>
-        </section>
-
-        {!isSupported && (
-          <div className="safe-callout" role="status">
-            <Warning size={23} />
-            <p>Audio playback is not available in this browser. Keep the message visible and use the typed conversation instead.</p>
-          </div>
-        )}
-
-        <p className="text-to-speech-note"><ShieldCheck size={20} />Text stays in this browser session. Check important wording before playing it aloud.</p>
-      </div>
     </Modal>
   )
 }
