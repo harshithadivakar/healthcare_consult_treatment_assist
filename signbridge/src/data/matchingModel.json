@@ -1,0 +1,133 @@
+{
+  "model": "LogisticRegression",
+  "library": "scikit-learn 1.8.0",
+  "trainingRows": 3000,
+  "testRows": 1000,
+  "positiveRate": 0.417,
+  "metrics": {
+    "testAuc": 0.772,
+    "testAccuracy": 0.707,
+    "gradientBoostingAuc": 0.757
+  },
+  "intercept": -0.5129141538910684,
+  "features": [
+    {
+      "name": "specialtyExperience",
+      "label": "Experience with this treatment area",
+      "transform": "log1p",
+      "mean": 2.401453438415002,
+      "scale": 0.7752094793022611,
+      "coef": 0.39265665231351243
+    },
+    {
+      "name": "similarPatientRating",
+      "label": "Rating from patients with a similar history",
+      "transform": null,
+      "mean": 4.185533333333334,
+      "scale": 0.4304661607554711,
+      "coef": 0.4891181180582165
+    },
+    {
+      "name": "onTimeRate",
+      "label": "Deadlines met and appointments attended",
+      "transform": null,
+      "mean": 0.9185840000000004,
+      "scale": 0.059727237873519703,
+      "coef": 0.30470567114599284
+    },
+    {
+      "name": "recentNoShows",
+      "label": "Missed appointments in the last 90 days",
+      "transform": null,
+      "mean": 0.801,
+      "scale": 1.0469315482239723,
+      "coef": -1.0502824167369185
+    },
+    {
+      "name": "sameRegion",
+      "label": "Signs the patient's regional BSL variety",
+      "transform": null,
+      "mean": 0.454,
+      "scale": 0.4978795034945701,
+      "coef": 0.26950417882557154
+    },
+    {
+      "name": "continuity",
+      "label": "Previous sessions with this patient",
+      "transform": null,
+      "mean": 1.8976666666666666,
+      "scale": 1.842424459479647,
+      "coef": 0.45458670553788977
+    },
+    {
+      "name": "weeklyWorkload",
+      "label": "Bookings already this week",
+      "transform": null,
+      "mean": 7.429333333333333,
+      "scale": 4.630083464570503,
+      "coef": -0.2474723003771412
+    }
+  ],
+  "testVectors": [
+    {
+      "x": {
+        "specialtyExperience": 27.0,
+        "similarPatientRating": 3.87,
+        "onTimeRate": 0.724,
+        "recentNoShows": 0.0,
+        "sameRegion": 0.0,
+        "continuity": 5.0,
+        "weeklyWorkload": 11.0
+      },
+      "p": 0.4352947457982906
+    },
+    {
+      "x": {
+        "specialtyExperience": 23.0,
+        "similarPatientRating": 3.95,
+        "onTimeRate": 0.914,
+        "recentNoShows": 0.0,
+        "sameRegion": 0.0,
+        "continuity": 1.0,
+        "weeklyWorkload": 1.0
+      },
+      "p": 0.5669465191836182
+    },
+    {
+      "x": {
+        "specialtyExperience": 34.0,
+        "similarPatientRating": 4.74,
+        "onTimeRate": 0.954,
+        "recentNoShows": 0.0,
+        "sameRegion": 0.0,
+        "continuity": 2.0,
+        "weeklyWorkload": 11.0
+      },
+      "p": 0.781505059873682
+    },
+    {
+      "x": {
+        "specialtyExperience": 21.0,
+        "similarPatientRating": 4.1,
+        "onTimeRate": 0.985,
+        "recentNoShows": 0.0,
+        "sameRegion": 0.0,
+        "continuity": 0.0,
+        "weeklyWorkload": 0.0
+      },
+      "p": 0.6375392741942181
+    },
+    {
+      "x": {
+        "specialtyExperience": 0.0,
+        "similarPatientRating": 4.06,
+        "onTimeRate": 0.965,
+        "recentNoShows": 1.0,
+        "sameRegion": 0.0,
+        "continuity": 2.0,
+        "weeklyWorkload": 9.0
+      },
+      "p": 0.105342722774092
+    }
+  ]
+}

@@ -21,6 +21,8 @@ Construire une maquette PWA accessible qui démontre une conversation bidirectio
 - Grandes cibles tactiles, focus visible et navigation clavier.
 - Une fonctionnalité dépendante du navigateur doit toujours avoir un secours manuel.
 - Les données de session restent dans l'état React et ne sont jamais persistées.
+- Exception : le portail patient / interprète / médecin (`src/data/portalStore.ts`) enregistre ses données fictives dans le `localStorage` du navigateur pour la démonstration, et supprime tout enregistrement de plus de 7 jours. Aucune donnée réelle ne doit y entrer.
+- Le classement des interprètes utilise `src/data/matchingModel.json`, produit par `python ml/train_matching_model.py` (scikit-learn, données synthétiques). Relancer le script après toute modification des variables du modèle.
 - Toute nouvelle phrase médicale doit déclarer catégorie, risque, confirmation et recommandation d'interprète.
 
 ## Tests obligatoires
