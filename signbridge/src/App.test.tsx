@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { getBslClipEmbedUrl, getBslVideoReference } from './data/bslVideos'
 import { medicalPhrases, phraseCategories } from './data/phrases'
@@ -8,6 +8,22 @@ import { medicalPhrases, phraseCategories } from './data/phrases'
 describe('SignBridge prototype', () => {
   beforeEach(() => {
     Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true })
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: { cancel: vi.fn(), speak: vi.fn() },
+    })
+    class FakeSpeechSynthesisUtterance {
+      text: string
+      lang = ''
+      rate = 1
+      onend: (() => void) | null = null
+      onerror: (() => void) | null = null
+
+      constructor(text: string) {
+        this.text = text
+      }
+    }
+    vi.stubGlobal('SpeechSynthesisUtterance', FakeSpeechSynthesisUtterance)
   })
 
   it('shows the clinical limitation and communication preferences on entry', () => {
@@ -15,7 +31,53 @@ describe('SignBridge prototype', () => {
     expect(screen.getByRole('heading', { name: /how would you like to communicate/i })).toBeInTheDocument()
     expect(screen.getByText(/not for diagnosis, consent, medication decisions or clinical use/i)).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: /large text/i })).toBeInTheDocument()
+    const headerPreferences = screen.getByRole('group', { name: /communication preferences/i })
+    expect(within(headerPreferences).getByRole('checkbox', { name: /^bsl$/i })).toBeChecked()
+    expect(within(headerPreferences).getByRole('checkbox', { name: /live captions/i })).toBeChecked()
+    expect(within(headerPreferences).getByRole('checkbox', { name: /typed conversation/i })).toBeChecked()
     expect(screen.getByRole('button', { name: /request a qualified bsl interpreter/i })).toBeInTheDocument()
+  })
+
+  it('keeps header preferences in sync and opens the text-to-speech conversation', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const bslPreference = screen.getByRole('checkbox', { name: /^bsl$/i })
+    await user.click(bslPreference)
+    expect(bslPreference).not.toBeChecked()
+
+    const openButton = screen.getByRole('button', { name: /text to speech/i })
+    await user.click(openButton)
+    const dialog = screen.getByRole('dialog', { name: /text to speech/i })
+    const message = within(dialog).getByRole('textbox', { name: /text to read aloud/i })
+    await user.type(message, 'Please take a seat.')
+    await user.click(within(dialog).getByRole('radio', { name: /^patient$/i }))
+    expect(within(dialog).getByText('Please take a seat.', { selector: '.speech-preview-bubble p' })).toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: /speak text/i }))
+    expect(window.speechSynthesis.speak).toHaveBeenCalledTimes(1)
+    const utterance = vi.mocked(window.speechSynthesis.speak).mock.calls[0][0]
+    expect(utterance.text).toBe('Please take a seat.')
+    expect(utterance.lang).toBe('en-GB')
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: /text to speech/i })).not.toBeInTheDocument()
+    expect(openButton).toHaveFocus()
+  })
+
+  it('keeps typed text available when browser speech playback is unsupported', async () => {
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: undefined })
+    vi.stubGlobal('SpeechSynthesisUtterance', undefined)
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /text to speech/i }))
+    const dialog = screen.getByRole('dialog', { name: /text to speech/i })
+    await user.type(within(dialog).getByRole('textbox', { name: /text to read aloud/i }), 'Please take a seat.')
+
+    expect(within(dialog).getByText(/audio playback is not available in this browser/i)).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /speak text/i })).toBeDisabled()
+    expect(within(dialog).getByText('Please take a seat.', { selector: '.speech-preview-bubble p' })).toBeVisible()
   })
 
   it('hands an interpreter request to the SignSlot scheduling demo', async () => {

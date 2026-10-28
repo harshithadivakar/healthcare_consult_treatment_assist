@@ -29,6 +29,8 @@ import {
   SignOut,
   Siren,
   SlidersHorizontal,
+  SpeakerHigh,
+  SpeakerSlash,
   Stethoscope,
   TextAa,
   Trash,
@@ -54,7 +56,7 @@ import type {
 } from './types'
 
 type Screen = 'onboarding' | 'journey' | 'conversation' | 'privacy'
-type ModalName = 'interpreter' | 'erase' | 'phrase-library' | 'symptoms' | 'camera' | 'bsl-video' | 'settings' | null
+type ModalName = 'interpreter' | 'erase' | 'phrase-library' | 'symptoms' | 'camera' | 'bsl-video' | 'settings' | 'text-to-speech' | null
 
 const defaultPreferences: Preferences = {
   bsl: true,
@@ -274,7 +276,10 @@ function App() {
         journey={journey}
         isOnline={isOnline}
         hasSession={hasSession}
+        preferences={preferences}
+        onPreferencesChange={setPreferences}
         onBack={() => setScreen(screen === 'conversation' ? 'journey' : 'onboarding')}
+        onTextToSpeech={() => setModal('text-to-speech')}
         onPrivacy={() => setScreen('privacy')}
         onSettings={() => setModal('settings')}
         onErase={() => setModal('erase')}
@@ -358,6 +363,7 @@ function App() {
       {modal === 'settings' && (
         <SettingsModal preferences={preferences} onChange={setPreferences} onClose={() => setModal(null)} />
       )}
+      {modal === 'text-to-speech' && <TextToSpeechModal onClose={() => setModal(null)} />}
     </div>
   )
 }
@@ -367,13 +373,34 @@ interface HeaderProps {
   journey: Journey | null
   isOnline: boolean
   hasSession: boolean
+  preferences: Preferences
+  onPreferencesChange: (preferences: Preferences) => void
   onBack: () => void
+  onTextToSpeech: () => void
   onPrivacy: () => void
   onSettings: () => void
   onErase: () => void
 }
 
-function Header({ screen, journey, isOnline, hasSession, onBack, onPrivacy, onSettings, onErase }: HeaderProps) {
+function Header({
+  screen,
+  journey,
+  isOnline,
+  hasSession,
+  preferences,
+  onPreferencesChange,
+  onBack,
+  onTextToSpeech,
+  onPrivacy,
+  onSettings,
+  onErase,
+}: HeaderProps) {
+  const communicationPreferences: Array<{ key: 'bsl' | 'captions' | 'typed'; label: string; icon: typeof HandPalm }> = [
+    { key: 'bsl', label: 'BSL', icon: HandPalm },
+    { key: 'captions', label: 'Live captions', icon: Ear },
+    { key: 'typed', label: 'Typed conversation', icon: Keyboard },
+  ]
+
   return (
     <header className="topbar">
       <div className="topbar-primary">
@@ -389,6 +416,25 @@ function Header({ screen, journey, isOnline, hasSession, onBack, onPrivacy, onSe
         {journey && screen === 'conversation' && <span className="journey-label">{journey}</span>}
       </div>
       <nav className="topbar-actions" aria-label="Utility navigation">
+        {screen === 'onboarding' && (
+          <fieldset className="header-preferences">
+            <legend className="visually-hidden">Communication preferences</legend>
+            {communicationPreferences.map(({ key, label, icon: Icon }) => (
+              <label className="header-preference" key={key}>
+                <input
+                  type="checkbox"
+                  checked={preferences[key]}
+                  onChange={(event) => onPreferencesChange({ ...preferences, [key]: event.target.checked })}
+                />
+                <Icon size={19} weight="bold" aria-hidden="true" />
+                <span>{label}</span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        <button className="utility-button text-to-speech-button" onClick={onTextToSpeech}>
+          <SpeakerHigh size={20} />Text to speech
+        </button>
         <span className="network-status" aria-live="polite">
           {isOnline ? <WifiHigh size={20} /> : <WifiSlash size={20} />}
           {isOnline ? 'Online' : 'Offline mode'}
@@ -406,10 +452,7 @@ function Onboarding({ preferences, onChange, onContinue }: {
   onChange: (preferences: Preferences) => void
   onContinue: () => void
 }) {
-  const options: Array<{ key: keyof Preferences; label: string; detail: string; icon: typeof HandPalm }> = [
-    { key: 'bsl', label: 'British Sign Language', detail: 'Show attributed BSL video excerpts for curated phrases.', icon: HandPalm },
-    { key: 'captions', label: 'Live captions', detail: 'Show spoken words as editable text when the browser supports it.', icon: Ear },
-    { key: 'typed', label: 'Typed conversation', detail: 'Keep the keyboard available on both sides of the conversation.', icon: Keyboard },
+  const options: Array<{ key: 'largeText' | 'highContrast'; label: string; detail: string; icon: typeof HandPalm }> = [
     { key: 'largeText', label: 'Large text', detail: 'Increase text size throughout the application.', icon: TextAa },
     { key: 'highContrast', label: 'High contrast', detail: 'Use stronger borders and colour contrast.', icon: PersonArmsSpread },
   ]
@@ -419,14 +462,14 @@ function Onboarding({ preferences, onChange, onContinue }: {
       <div className="onboarding-intro">
         <span className="prototype-kicker">Accessible conversation support</span>
         <h1>How would you like to communicate?</h1>
-        <p>Choose any options that help. You can change them during this demonstration.</p>
+        <p>Choose BSL, live captions or typed conversation in the top bar. You can change them during this demonstration.</p>
         <div className="safety-notice" role="note">
           <WarningOctagon size={26} weight="fill" />
           <p><strong>Student prototype</strong><br />Not for diagnosis, consent, medication decisions or clinical use.</p>
         </div>
       </div>
       <div className="preference-panel" aria-labelledby="preference-heading">
-        <h2 id="preference-heading">Communication preferences</h2>
+        <h2 id="preference-heading">Display preferences</h2>
         <div className="preference-list">
           {options.map(({ key, label, detail, icon: Icon }) => (
             <label className="preference-option" key={key}>
@@ -776,7 +819,7 @@ function BslVideoExperience({ message, phraseId, isOnline, onClose, onInterprete
     >
       <div className="bsl-safety-strip" role="note">
         <WarningOctagon size={24} weight="fill" />
-        <p><strong>Educational reference — not validated for clinical use.</strong> This excerpt has not been independently validated as a safe clinical translation. Confirm understanding and use a qualified interpreter for high-risk communication.</p>
+        <p><strong>Educational reference - not validated for clinical use.</strong> This excerpt has not been independently validated as a safe clinical translation. Confirm understanding and use a qualified interpreter for high-risk communication.</p>
       </div>
 
       <div className="bsl-experience-grid">
@@ -787,7 +830,7 @@ function BslVideoExperience({ message, phraseId, isOnline, onClose, onInterprete
             <div className="source-video-frame">
               <iframe
                 src={getBslClipEmbedUrl(reference, clipStart, clipEnd)}
-                title={`${matchingPhrase.text} — University of Edinburgh BSL video excerpt`}
+                title={`${matchingPhrase.text} - University of Edinburgh BSL video excerpt`}
                 allow="autoplay; fullscreen; encrypted-media"
                 allowFullScreen
                 loading="lazy"
@@ -809,7 +852,7 @@ function BslVideoExperience({ message, phraseId, isOnline, onClose, onInterprete
           <h3 id="phrase-context-title">Selected English phrase</h3>
           <p className="phrase-display">{matchingPhrase.text}</p>
           <dl className="clip-details">
-            <div><dt>Excerpt</dt><dd>{formatClipTime(clipStart)}–{formatClipTime(clipEnd)}</dd></div>
+            <div><dt>Excerpt</dt><dd>{formatClipTime(clipStart)}-{formatClipTime(clipEnd)}</dd></div>
             <div><dt>Category</dt><dd>{matchingPhrase.category}</dd></div>
             <div><dt>Risk</dt><dd>{matchingPhrase.risk}</dd></div>
           </dl>
@@ -844,6 +887,118 @@ function EraseModal({ onClose, onErase }: { onClose: () => void; onErase: () => 
   )
 }
 
+function TextToSpeechModal({ onClose }: { onClose: () => void }) {
+  const [speaker, setSpeaker] = useState<'professional' | 'patient'>('professional')
+  const [text, setText] = useState('')
+  const [speechStatus, setSpeechStatus] = useState<'idle' | 'speaking'>('idle')
+  const isSupported = typeof window !== 'undefined'
+    && typeof window.speechSynthesis !== 'undefined'
+    && typeof window.SpeechSynthesisUtterance === 'function'
+
+  const stopSpeaking = useCallback(() => {
+    if (isSupported) window.speechSynthesis.cancel()
+    setSpeechStatus('idle')
+  }, [isSupported])
+
+  useEffect(() => () => {
+    if (isSupported) window.speechSynthesis.cancel()
+  }, [isSupported])
+
+  const speakText = () => {
+    const message = text.trim()
+    if (!isSupported || !message) return
+
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(message)
+    utterance.lang = 'en-GB'
+    utterance.rate = 0.95
+    utterance.onend = () => setSpeechStatus('idle')
+    utterance.onerror = () => setSpeechStatus('idle')
+    window.speechSynthesis.speak(utterance)
+    setSpeechStatus('speaking')
+  }
+
+  const closeDialog = () => {
+    stopSpeaking()
+    onClose()
+  }
+
+  return (
+    <Modal
+      title="Text to speech"
+      description="Type a message, check the wording together, then play it aloud using this device."
+      onClose={closeDialog}
+      actions={(
+        <>
+          <button className="secondary-button" onClick={stopSpeaking} disabled={speechStatus !== 'speaking'}>
+            <SpeakerSlash size={20} />Stop
+          </button>
+          <button className="primary-button" onClick={speakText} disabled={!isSupported || !text.trim()}>
+            <SpeakerHigh size={20} />Speak text
+          </button>
+        </>
+      )}
+    >
+      <div className="text-to-speech-layout">
+        <fieldset className="speaker-choice">
+          <legend>Who is speaking?</legend>
+          <label>
+            <input
+              type="radio"
+              name="text-to-speech-speaker"
+              value="professional"
+              checked={speaker === 'professional'}
+              onChange={() => setSpeaker('professional')}
+            />
+            Healthcare professional
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="text-to-speech-speaker"
+              value="patient"
+              checked={speaker === 'patient'}
+              onChange={() => setSpeaker('patient')}
+            />
+            Patient
+          </label>
+        </fieldset>
+
+        <label className="text-to-speech-input">
+          <span>Text to read aloud</span>
+          <textarea
+            rows={4}
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder="Type the message here"
+            data-modal-autofocus
+          />
+        </label>
+
+        <section className="speech-preview" aria-labelledby="speech-preview-title">
+          <div className="speech-preview-heading">
+            <strong id="speech-preview-title">Conversation preview</strong>
+            <span aria-live="polite">{speechStatus === 'speaking' ? 'Speaking now' : 'Ready'}</span>
+          </div>
+          <div className={`speech-preview-bubble speech-preview-${speaker}`}>
+            <small>{speaker === 'professional' ? 'Healthcare professional' : 'Patient'}</small>
+            <p>{text.trim() || 'The typed message will remain visible here.'}</p>
+          </div>
+        </section>
+
+        {!isSupported && (
+          <div className="safe-callout" role="status">
+            <Warning size={23} />
+            <p>Audio playback is not available in this browser. Keep the message visible and use the typed conversation instead.</p>
+          </div>
+        )}
+
+        <p className="text-to-speech-note"><ShieldCheck size={20} />Text stays in this browser session. Check important wording before playing it aloud.</p>
+      </div>
+    </Modal>
+  )
+}
+
 function SettingsModal({ preferences, onChange, onClose }: { preferences: Preferences; onChange: (value: Preferences) => void; onClose: () => void }) {
   return (
     <Modal title="Display and communication" description="Adjust the prototype for this session." onClose={onClose} actions={<button className="primary-button" onClick={onClose}>Done</button>}>
@@ -853,6 +1008,7 @@ function SettingsModal({ preferences, onChange, onClose }: { preferences: Prefer
         <label><span><Moon size={24} /><span><strong>Dark mode</strong><small>Use the dark colour theme for this session.</small></span></span><input type="checkbox" checked={preferences.darkMode} onChange={(event) => onChange({ ...preferences, darkMode: event.target.checked })} /></label>
         <label><span><HandPalm size={24} /><span><strong>BSL preference</strong><small>Show attributed BSL video excerpts for curated phrases.</small></span></span><input type="checkbox" checked={preferences.bsl} onChange={(event) => onChange({ ...preferences, bsl: event.target.checked })} /></label>
         <label><span><Ear size={24} /><span><strong>Live captions</strong><small>Use browser speech input when available.</small></span></span><input type="checkbox" checked={preferences.captions} onChange={(event) => onChange({ ...preferences, captions: event.target.checked })} /></label>
+        <label><span><Keyboard size={24} /><span><strong>Typed conversation</strong><small>Keep the keyboard available for both sides of the conversation.</small></span></span><input type="checkbox" checked={preferences.typed} onChange={(event) => onChange({ ...preferences, typed: event.target.checked })} /></label>
       </div>
     </Modal>
   )
