@@ -31,7 +31,7 @@ export const medicalPhrases: MedicalPhrase[] = [
   phrase('comm-2', 'Would you like me to type or speak?', 'Communication preferences'),
   phrase('comm-3', 'Would you prefer writing or a qualified BSL interpreter?', 'Communication preferences', 'Sensitive', true, true, 'edinburgh-general-assessment', 108, 118),
   phrase('comm-4', 'Please tell me if you need me to repeat or rephrase anything.', 'Communication preferences'),
-  phrase('comm-5', 'How can I help you?', 'Communication preferences', 'Sensitive', true, false, 'edinburgh-general-assessment', 440, 452),
+  phrase('comm-5', 'How can I help you?', 'Communication preferences', 'Sensitive', true, false, 'edinburgh-general-assessment', 437, 442),
   phrase('comm-6', 'Please fingerspell slowly.', 'Communication preferences', 'Routine', true, false, 'edinburgh-general-assessment', 460, 478),
   phrase('sym-1', 'How do you feel?', 'Symptoms', 'Sensitive', true, false, 'edinburgh-general-assessment', 230, 241),
   phrase('sym-2', 'When did your symptoms begin?', 'Symptoms', 'Sensitive', true),

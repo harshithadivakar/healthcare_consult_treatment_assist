@@ -206,4 +206,10 @@ describe('medical phrase library data', () => {
     expect(url).toContain('kalturaSeekFrom=7')
     expect(url).toContain('kalturaClipTo=18')
   })
+
+  it('keeps “How can I help you?” inside its own teaching prompt', () => {
+    const helpPhrase = medicalPhrases.find((phrase) => phrase.id === 'comm-5')
+    expect(helpPhrase?.bslClipStart).toBe(437)
+    expect(helpPhrase?.bslClipEnd).toBe(442)
+  })
 })
