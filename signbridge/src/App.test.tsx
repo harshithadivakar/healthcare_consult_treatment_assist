@@ -4,6 +4,11 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import App from './App'
 import { getBslClipEmbedUrl, getBslVideoReference } from './data/bslVideos'
 import { medicalPhrases, phraseCategories } from './data/phrases'
+import { interpreterProfiles } from './data/demoDirectory'
+import { resetPortal, updatePortal } from './data/portalStore'
+import type { PortalData } from './data/portalStore'
+import { modelInfo, predict, rankInterpreters } from './lib/matching'
+import type { FeatureVector } from './lib/matching'
 
 function renderConversationSupport() {
   const result = render(<App />)
@@ -12,6 +17,8 @@ function renderConversationSupport() {
 }
 
 describe('SignBridge care journey', () => {
+  beforeEach(() => resetPortal())
+
   it('shows the three-phase flow with patient, interpreter and doctor lanes on entry', () => {
     render(<App />)
     expect(screen.getByRole('heading', { name: /one portal for the whole appointment/i })).toBeInTheDocument()
@@ -23,57 +30,128 @@ describe('SignBridge care journey', () => {
     expect(screen.getByRole('button', { name: /request a qualified bsl interpreter/i })).toBeInTheDocument()
   })
 
-  it('opens the patient view, sends a questionnaire answer and shows it to the doctor', async () => {
+  it('saves a patient booking and shows it on the doctor and interpreter pages', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(screen.getByRole('button', { name: /^patient view/i }))
-    expect(screen.getByRole('heading', { name: /hello, alex lewis/i })).toBeInTheDocument()
-
-    await user.click(screen.getByRole('tab', { name: /choose interpreter/i }))
-    await user.click(screen.getByRole('button', { name: /choose tom/i }))
-
-    await user.click(screen.getByRole('tab', { name: /messages/i }))
-    expect(screen.getByText(/simulated recording/i)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /start recording/i }))
-    await user.click(screen.getByRole('button', { name: /stop recording/i }))
-    await user.click(screen.getByRole('button', { name: /send answers/i }))
-    expect(screen.getByText(/answers sent/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: /dr shah/i }))
+    expect(screen.getByRole('button', { name: /thu 29 oct.*already booked/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /mon 2 nov.*no interpreter free/i })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /tue 3 nov.*09:30/i }))
+    await user.click(screen.getByRole('button', { name: /book appointment/i }))
+    expect(screen.getByText(/booked with dr shah on tue 3 nov 09:30/i)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /^doctor$/i }))
-    const alexRow = screen.getByRole('cell', { name: 'Alex Lewis' }).closest('[role="row"]') as HTMLElement
-    expect(within(alexRow).getByText('Tom Hughes')).toBeInTheDocument()
-    expect(within(alexRow).getByText('With interpreter')).toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: /viewing as doctor/i }), 'doc-shah')
+    let alexRow = screen.getByRole('cell', { name: 'Alex Lewis' }).closest('[role="row"]') as HTMLElement
+    expect(within(alexRow).getByText('Patient choosing')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^patient$/i }))
+    await user.click(screen.getAllByRole('button', { name: /choose an interpreter/i })[1])
+    expect(screen.getByText(/ranked by a logistic regression trained with scikit-learn/i)).toBeInTheDocument()
+    const chooseButton = screen.getAllByRole('button', { name: /^choose /i }).find((button) => !button.hasAttribute('disabled'))!
+    const chosenFirstName = chooseButton.textContent!.replace('Choose ', '')
+    await user.click(chooseButton)
+    const chosen = interpreterProfiles.find((item) => item.name.startsWith(chosenFirstName))!
+
+    await user.click(screen.getByRole('button', { name: /^doctor$/i }))
+    await user.selectOptions(screen.getByRole('combobox', { name: /viewing as doctor/i }), 'doc-shah')
+    alexRow = screen.getByRole('cell', { name: 'Alex Lewis' }).closest('[role="row"]') as HTMLElement
+    expect(within(alexRow).getByText(chosen.name)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^bsl interpreter$/i }))
+    await user.selectOptions(screen.getByRole('combobox', { name: /viewing as interpreter/i }), chosen.id)
+    expect(screen.getByText('Alex Lewis with Dr Shah')).toBeInTheDocument()
   })
 
-  it('only lets patients book slots with a free interpreter', async () => {
+  it('delivers messages from patient to doctor and back', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(screen.getByRole('button', { name: /^patient view/i }))
-    expect(screen.getByRole('button', { name: /no interpreter free/i })).toBeDisabled()
-    await user.click(screen.getByRole('button', { name: /fri 30 oct.*13:45/i }))
-    await user.click(screen.getByRole('button', { name: /book this slot/i }))
-    expect(screen.getByText(/booked for fri 30 oct at 13:45/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: /messages/i }))
+    await user.selectOptions(screen.getByRole('combobox', { name: /^to$/i }), 'doc-bell')
+    await user.type(screen.getByRole('textbox', { name: /^message$/i }), 'Can I bring my partner to the appointment?')
+    await user.click(screen.getByRole('button', { name: /^send$/i }))
+
+    await user.click(screen.getByRole('button', { name: /^doctor$/i }))
+    expect(screen.getByText('Can I bring my partner to the appointment?')).toBeInTheDocument()
+    expect(screen.getByText('From Alex Lewis')).toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: /^to$/i }), 'pat-alex')
+    await user.type(screen.getByRole('textbox', { name: /^message$/i }), 'Yes, of course.')
+    await user.click(screen.getByRole('button', { name: /^send$/i }))
+
+    await user.click(screen.getByRole('button', { name: /^patient$/i }))
+    await user.click(screen.getByRole('tab', { name: /messages/i }))
+    expect(screen.getByText('Yes, of course.')).toBeInTheDocument()
+    expect(screen.getByText('From Dr Bell')).toBeInTheDocument()
   })
 
-  it('shows interpreter deadlines and adds an accepted task to the calendar', async () => {
+  it('routes questionnaire answers to the matched interpreter and the interpretation to the doctor', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^patient view/i }))
+    await user.click(screen.getByRole('tab', { name: /messages/i }))
+    await user.click(screen.getByRole('radio', { name: /type answers/i }))
+    for (const box of screen.getAllByRole('textbox').slice(0, 3)) await user.type(box, 'Chest pain since Monday.')
+    await user.click(screen.getByRole('button', { name: /send answers/i }))
+    const status = screen.getByText(/answers sent\./i).textContent!
+    const interpreterName = /Answers sent\. (.+?) \(\d+% match\)/.exec(status)![1]
+    const interpreter = interpreterProfiles.find((item) => item.name === interpreterName)!
+
+    await user.click(screen.getByRole('button', { name: /^bsl interpreter$/i }))
+    await user.selectOptions(screen.getByRole('combobox', { name: /viewing as interpreter/i }), interpreter.id)
+    await user.type(screen.getByRole('textbox', { name: /english interpretation for dr bell/i }), 'Chest pain since Monday.')
+    await user.click(screen.getByRole('button', { name: /send to dr bell/i }))
+
+    await user.click(screen.getByRole('button', { name: /^doctor$/i }))
+    expect(screen.getByText('Interpretation: Alex Lewis pre-consultation')).toBeInTheDocument()
+    const alexRow = screen.getByRole('cell', { name: 'Alex Lewis' }).closest('[role="row"]') as HTMLElement
+    expect(within(alexRow).getByText('Interpreted')).toBeInTheDocument()
+  })
+
+  it('recommends open appointments to interpreters the model ranks highly', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(screen.getByRole('button', { name: /^bsl interpreter view/i }))
-    expect(screen.getAllByText(/pre-consult deadline/i).length).toBeGreaterThan(0)
     expect(screen.getByText(/how matching works/i)).toBeInTheDocument()
-    expect(screen.queryByText('Patient B.O. with Dr Shah')).not.toBeInTheDocument()
-    await user.click(screen.getAllByRole('button', { name: /^accept$/i })[1])
-    expect(screen.getByText('Patient B.O. with Dr Shah')).toBeInTheDocument()
+    expect(screen.getByText('Bisi Okonjo for Dr Shah')).toBeInTheDocument()
+    const recommendations = screen.getByRole('region', { name: /new appointments recommended for you/i })
+    const [accept] = within(recommendations).getAllByRole('button', { name: /^accept$/i })
+    await user.click(accept)
+    expect(within(screen.getByRole('region', { name: /next five working days/i })).getAllByText(/consultation/i).length).toBeGreaterThan(1)
+  })
+})
+
+describe('interpreter matching model', () => {
+  beforeEach(() => resetPortal())
+
+  it('reproduces the scikit-learn predictions in the browser', () => {
+    for (const vector of modelInfo.testVectors) {
+      expect(predict(vector.x as FeatureVector).probability).toBeCloseTo(vector.p, 6)
+    }
   })
 
-  it('lets the doctor read interpretations and send a message', async () => {
-    const user = userEvent.setup()
-    render(<App />)
-    await user.click(screen.getByRole('button', { name: /^doctor view/i }))
-    expect(screen.getByRole('heading', { name: /interpretation: sam morgan/i })).toBeInTheDocument()
-    await user.type(screen.getByRole('textbox', { name: /message/i }), 'Please bring your blood pressure readings.')
-    await user.click(screen.getByRole('button', { name: /^send$/i }))
-    expect(screen.getByText('Please bring your blood pressure readings.')).toBeInTheDocument()
+  it('moves an interpreter reported as a no-show to last priority', () => {
+    const context = { patientId: 'pat-alex', doctorId: 'doc-bell', slot: 'Thu 29 Oct 14:15', mode: 'Online' as const }
+    let snapshot: PortalData | undefined
+    updatePortal((data) => (snapshot = data))
+    const top = rankInterpreters(snapshot!, context)[0]
+    updatePortal((data) => (snapshot = { ...data, reportedNoShows: { [top.interpreter.id]: 1 } }))
+    const ranked = rankInterpreters(snapshot!, context).filter((match) => match.available)
+    expect(ranked.at(-1)?.interpreter.id).toBe(top.interpreter.id)
+    expect(ranked.at(-1)?.penalised).toBe(true)
+  })
+
+  it('saves bookings in the browser and deletes records older than 7 days', () => {
+    const eightDaysAgo = Date.now() - 8 * 24 * 60 * 60 * 1000
+    updatePortal((data) => ({
+      ...data,
+      bookings: [...data.bookings, { id: 'fresh', patientId: 'pat-alex', doctorId: 'doc-novak', slot: 'Tue 3 Nov 14:00', mode: 'Online', interpreterId: null, noShow: false, createdAt: Date.now() }],
+      messages: [...data.messages, { ...data.messages[0], id: 'old', createdAt: eightDaysAgo }],
+    }))
+    const saved = JSON.parse(window.localStorage.getItem('signbridge-demo-portal-v1')!) as PortalData
+    expect(saved.bookings.some((booking) => booking.id === 'fresh')).toBe(true)
+    expect(saved.messages.some((message) => message.id === 'old')).toBe(false)
   })
 })
 

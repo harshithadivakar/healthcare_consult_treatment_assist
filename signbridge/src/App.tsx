@@ -41,8 +41,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CareJourney } from './components/CareJourney'
 import { Modal } from './components/Modal'
-import { initialPortalState, RolePortal } from './components/RoleViews'
-import type { PortalState } from './components/RoleViews'
+import { RolePortal } from './components/RoleViews'
 import { StatusBadge } from './components/StatusBadge'
 import type { Role } from './data/careJourney'
 import { formatClipTime, getBslClipEmbedUrl, getBslVideoReference } from './data/bslVideos'
@@ -110,7 +109,6 @@ const backTargets: Partial<Record<Screen, Screen>> = {
 function App() {
   const [screen, setScreen] = useState<Screen>('home')
   const [role, setRole] = useState<Role>('patient')
-  const [portal, setPortal] = useState<PortalState>(initialPortalState)
   const [modal, setModal] = useState<ModalName>(null)
   const [preferences, setPreferences] = useState(defaultPreferences)
   const [journey, setJourney] = useState<Journey | null>(null)
@@ -258,7 +256,6 @@ function App() {
     setBslPhraseId(null)
     setPatientReply('')
     setJourney(null)
-    setPortal(initialPortalState)
     setModal(null)
     setScreen('onboarding')
     setToast('Session ended. All conversation data was erased from memory.')
@@ -312,8 +309,6 @@ function App() {
         {screen === 'role' && (
           <RolePortal
             role={role}
-            state={portal}
-            onStateChange={setPortal}
             onSwitchRole={setRole}
             onStartConversation={openConversation}
           />
