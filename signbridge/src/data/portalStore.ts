@@ -5,6 +5,8 @@ import { useSyncExternalStore } from 'react'
 import type { Role } from './careJourney'
 import type { Mode } from './demoDirectory'
 
+export type Phase = 'Pre-consultation' | 'Post-consultation'
+
 export interface Party {
   role: Role
   id: string
@@ -20,6 +22,8 @@ export interface Booking {
   durationMinutes: number
   interpreterId: string | null
   coInterpreterId: string | null
+  // Chosen outside their declared availability, so the interpreter has to confirm.
+  pendingConfirmation: boolean
   noShow: boolean
   createdAt: number
 }
@@ -28,10 +32,13 @@ export interface PortalMessage {
   id: string
   from: Party
   to: Party
-  kind: 'message' | 'questionnaire' | 'interpretation'
+  kind: 'message' | 'questionnaire' | 'answers' | 'interpretation'
   subject: string
   body: string
   questions?: string[]
+  answers?: string[]
+  phase?: Phase
+  questionnaireId?: string
   createdAt: number
 }
 
@@ -40,18 +47,19 @@ export interface InterpretationTask {
   questionnaireId: string
   patientId: string
   doctorId: string
-  interpreterId: string
-  matchScore: number
-  answerMode: 'record' | 'type'
-  answers: string[]
+  phase: Phase
+  // A recorded answer is a translation job: offered to a shortlist until one interpreter accepts.
+  interpreterId: string | null
+  offeredTo: string[]
+  declinedBy: string[]
   videoSeconds: number
   due: string
-  status: 'awaiting' | 'sent'
+  status: 'open' | 'awaiting' | 'sent'
   createdAt: number
 }
 
 export interface PortalData {
-  version: 2
+  version: 3
   bookings: Booking[]
   messages: PortalMessage[]
   tasks: InterpretationTask[]
@@ -62,7 +70,7 @@ export interface PortalData {
 
 export const retentionDays = 7
 const retentionMs = retentionDays * 24 * 60 * 60 * 1000
-const storageKey = 'signbridge-demo-portal-v2'
+const storageKey = 'signbridge-demo-portal-v3'
 
 export const newId = () => crypto.randomUUID()
 
@@ -71,19 +79,19 @@ function seed(): PortalData {
   const hoursAgo = (hours: number) => now - hours * 60 * 60 * 1000
   const doctorBell: Party = { role: 'doctor', id: 'doc-bell', name: 'Dr Bell' }
   return {
-    version: 2,
+    version: 3,
     bookings: [
-      { id: 'seed-b1', patientId: 'pat-sam', doctorId: 'doc-bell', slot: 'Thu 29 Oct 09:30', mode: 'Online', durationMinutes: 30, interpreterId: 'int-amara', coInterpreterId: null, noShow: false, createdAt: hoursAgo(50) },
-      { id: 'seed-b2', patientId: 'pat-jordan', doctorId: 'doc-shah', slot: 'Thu 29 Oct 11:00', mode: 'Online', durationMinutes: 45, interpreterId: 'int-tom', coInterpreterId: null, noShow: false, createdAt: hoursAgo(40) },
-      { id: 'seed-b3', patientId: 'pat-bisi', doctorId: 'doc-shah', slot: 'Fri 30 Oct 13:45', mode: 'Online', durationMinutes: 90, interpreterId: null, coInterpreterId: null, noShow: false, createdAt: hoursAgo(20) },
-      { id: 'seed-b4', patientId: 'pat-cara', doctorId: 'doc-novak', slot: 'Fri 30 Oct 09:00', mode: 'In person', durationMinutes: 60, interpreterId: null, coInterpreterId: null, noShow: false, createdAt: hoursAgo(18) },
-      { id: 'seed-b6', patientId: 'pat-sam', doctorId: 'doc-bell', slot: 'Fri 30 Oct 20:30', mode: 'Online', durationMinutes: 30, interpreterId: 'int-amara', coInterpreterId: null, noShow: false, createdAt: hoursAgo(12) },
-      { id: 'seed-b5', patientId: 'pat-alex', doctorId: 'doc-bell', slot: 'Thu 29 Oct 14:15', mode: 'In person', durationMinutes: 30, interpreterId: null, coInterpreterId: null, noShow: false, createdAt: hoursAgo(30) },
+      { id: 'seed-b1', patientId: 'pat-sam', doctorId: 'doc-bell', slot: 'Thu 29 Oct 09:30', mode: 'Online', durationMinutes: 30, interpreterId: 'int-amara', coInterpreterId: null, pendingConfirmation: false, noShow: false, createdAt: hoursAgo(50) },
+      { id: 'seed-b2', patientId: 'pat-jordan', doctorId: 'doc-shah', slot: 'Thu 29 Oct 11:00', mode: 'Online', durationMinutes: 45, interpreterId: 'int-tom', coInterpreterId: null, pendingConfirmation: false, noShow: false, createdAt: hoursAgo(40) },
+      { id: 'seed-b3', patientId: 'pat-bisi', doctorId: 'doc-shah', slot: 'Fri 30 Oct 13:45', mode: 'Online', durationMinutes: 90, interpreterId: null, coInterpreterId: null, pendingConfirmation: false, noShow: false, createdAt: hoursAgo(20) },
+      { id: 'seed-b4', patientId: 'pat-cara', doctorId: 'doc-novak', slot: 'Fri 30 Oct 09:00', mode: 'In person', durationMinutes: 60, interpreterId: null, coInterpreterId: null, pendingConfirmation: false, noShow: false, createdAt: hoursAgo(18) },
+      { id: 'seed-b6', patientId: 'pat-sam', doctorId: 'doc-bell', slot: 'Fri 30 Oct 20:30', mode: 'Online', durationMinutes: 30, interpreterId: 'int-amara', coInterpreterId: null, pendingConfirmation: false, noShow: false, createdAt: hoursAgo(12) },
+      { id: 'seed-b5', patientId: 'pat-alex', doctorId: 'doc-bell', slot: 'Thu 29 Oct 14:15', mode: 'In person', durationMinutes: 30, interpreterId: null, coInterpreterId: null, pendingConfirmation: false, noShow: false, createdAt: hoursAgo(30) },
     ],
     messages: [
       {
         id: 'seed-m1', from: doctorBell, to: { role: 'patient', id: 'pat-alex', name: 'Alex Lewis' }, kind: 'questionnaire',
-        subject: 'Before your appointment on Thu 29 Oct',
+        subject: 'Before your appointment on Thu 29 Oct', phase: 'Pre-consultation',
         body: 'Please answer these questions in BSL or text before your appointment.',
         questions: [
           'What symptoms are you having, and when did they start?',
@@ -104,20 +112,31 @@ function seed(): PortalData {
       },
       {
         id: 'seed-m4', from: { role: 'doctor', id: 'doc-shah', name: 'Dr Shah' }, to: { role: 'patient', id: 'pat-bisi', name: 'Bisi Okonjo' }, kind: 'questionnaire',
-        subject: 'Before your diabetes review', body: 'Please answer these questions in BSL or text before your appointment.',
+        subject: 'Before your diabetes review', phase: 'Pre-consultation', body: 'Please answer these questions in BSL or text before your appointment.',
         questions: ['How have your blood sugar readings been this month?', 'Have you had any hypos?'],
         createdAt: hoursAgo(28),
+      },
+      {
+        id: 'seed-m5', from: { role: 'doctor', id: 'doc-novak', name: 'Dr Novak' }, to: { role: 'patient', id: 'pat-cara', name: 'Cara Walsh' }, kind: 'questionnaire',
+        subject: 'Follow-up after your physiotherapy', phase: 'Post-consultation', body: 'Please answer these questions in BSL or text.',
+        questions: ['How is your knee after the exercises?', 'Has the swelling gone down?'],
+        createdAt: hoursAgo(8),
       },
     ],
     tasks: [
       {
-        id: 'seed-t1', questionnaireId: 'seed-q-sam', patientId: 'pat-sam', doctorId: 'doc-bell', interpreterId: 'int-amara', matchScore: 81,
-        answerMode: 'record', answers: [], videoSeconds: 72, due: 'Thu 29 Oct 08:00', status: 'sent', createdAt: hoursAgo(30),
+        id: 'seed-t1', questionnaireId: 'seed-q-sam', patientId: 'pat-sam', doctorId: 'doc-bell', phase: 'Pre-consultation',
+        interpreterId: 'int-amara', offeredTo: ['int-amara', 'int-nadia', 'int-tom'], declinedBy: [], videoSeconds: 72, due: 'Thu 29 Oct 08:00', status: 'sent', createdAt: hoursAgo(30),
       },
       {
-        id: 'seed-t2', questionnaireId: 'seed-m4', patientId: 'pat-bisi', doctorId: 'doc-shah', interpreterId: 'int-amara', matchScore: 74,
-        answerMode: 'record', answers: [], videoSeconds: 380,
+        id: 'seed-t2', questionnaireId: 'seed-m4', patientId: 'pat-bisi', doctorId: 'doc-shah', phase: 'Pre-consultation',
+        interpreterId: 'int-amara', offeredTo: ['int-tom', 'int-amara', 'int-nadia'], declinedBy: [], videoSeconds: 380,
         due: 'Fri 30 Oct 08:00', status: 'awaiting', createdAt: hoursAgo(10),
+      },
+      {
+        id: 'seed-t3', questionnaireId: 'seed-m5', patientId: 'pat-cara', doctorId: 'doc-novak', phase: 'Post-consultation',
+        interpreterId: null, offeredTo: ['int-callum', 'int-amara', 'int-priya'], declinedBy: [], videoSeconds: 150,
+        due: 'Fri 30 Oct 17:00', status: 'open', createdAt: hoursAgo(5),
       },
     ],
     reportedNoShows: {},
@@ -136,7 +155,7 @@ function load(): PortalData {
     const saved = window.localStorage.getItem(storageKey)
     if (saved) {
       const parsed = JSON.parse(saved) as PortalData
-      if (parsed.version === 2) return purgeExpired({ ...parsed, readAt: parsed.readAt ?? {} })
+      if (parsed.version === 3) return purgeExpired({ ...parsed, readAt: parsed.readAt ?? {} })
     }
   } catch {
     // Storage blocked or corrupt: fall back to the seed data in memory.
