@@ -35,6 +35,8 @@ export interface InterpreterProfile {
 
 // The demonstration is set on Wednesday 28 October 2026.
 export const demoDays = ['Wed 28 Oct', 'Thu 29 Oct', 'Fri 30 Oct', 'Mon 2 Nov', 'Tue 3 Nov']
+// The working week of Mon 26 Oct to Sun 1 Nov, from today onwards.
+export const currentWeekDays = demoDays.slice(0, 3)
 
 export const slotKey = (day: string, time: string) => `${day} ${time}`
 export const splitSlot = (key: string) => {
@@ -62,7 +64,7 @@ export const doctors: Doctor[] = [
     name: 'Dr Bell',
     specialty: 'Cardiology',
     practice: 'Riverside Surgery',
-    slots: ['Thu 29 Oct 09:30', 'Thu 29 Oct 14:15', 'Fri 30 Oct 10:00', 'Mon 2 Nov 09:00', 'Tue 3 Nov 11:30'],
+    slots: ['Thu 29 Oct 09:30', 'Thu 29 Oct 14:15', 'Fri 30 Oct 10:00', 'Fri 30 Oct 20:30', 'Mon 2 Nov 09:00', 'Tue 3 Nov 11:30'],
   },
   {
     id: 'doc-shah',
@@ -86,7 +88,7 @@ export const interpreterProfiles: InterpreterProfile[] = [
     specialtyExperience: { Cardiology: 18, Diabetes: 6, Physiotherapy: 3 },
     similarPatientRating: { Cardiology: 4.9, Diabetes: 4.5, Physiotherapy: 4.3 },
     onTimeRate: 0.99, recentNoShows: 0, weeklyWorkload: 9, continuity: { 'pat-alex': 2, 'pat-sam': 3 },
-    availability: ['Thu 29 Oct 09:30', 'Thu 29 Oct 14:15', 'Fri 30 Oct 10:00', 'Fri 30 Oct 13:45', 'Tue 3 Nov 11:30', 'Tue 3 Nov 09:30'],
+    availability: ['Thu 29 Oct 09:30', 'Thu 29 Oct 14:15', 'Fri 30 Oct 10:00', 'Fri 30 Oct 13:45', 'Fri 30 Oct 20:30', 'Tue 3 Nov 11:30', 'Tue 3 Nov 09:30'],
   },
   {
     id: 'int-tom', name: 'Tom Hughes', initials: 'TH', region: 'Manchester', modes: ['Online'],

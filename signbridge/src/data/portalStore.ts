@@ -17,7 +17,9 @@ export interface Booking {
   doctorId: string
   slot: string
   mode: Mode
+  durationMinutes: number
   interpreterId: string | null
+  coInterpreterId: string | null
   noShow: boolean
   createdAt: number
 }
@@ -42,13 +44,14 @@ export interface InterpretationTask {
   matchScore: number
   answerMode: 'record' | 'type'
   answers: string[]
+  videoSeconds: number
   due: string
   status: 'awaiting' | 'sent'
   createdAt: number
 }
 
 export interface PortalData {
-  version: 1
+  version: 2
   bookings: Booking[]
   messages: PortalMessage[]
   tasks: InterpretationTask[]
@@ -57,7 +60,7 @@ export interface PortalData {
 
 export const retentionDays = 7
 const retentionMs = retentionDays * 24 * 60 * 60 * 1000
-const storageKey = 'signbridge-demo-portal-v1'
+const storageKey = 'signbridge-demo-portal-v2'
 
 export const newId = () => crypto.randomUUID()
 
@@ -66,13 +69,14 @@ function seed(): PortalData {
   const hoursAgo = (hours: number) => now - hours * 60 * 60 * 1000
   const doctorBell: Party = { role: 'doctor', id: 'doc-bell', name: 'Dr Bell' }
   return {
-    version: 1,
+    version: 2,
     bookings: [
-      { id: 'seed-b1', patientId: 'pat-sam', doctorId: 'doc-bell', slot: 'Thu 29 Oct 09:30', mode: 'Online', interpreterId: 'int-amara', noShow: false, createdAt: hoursAgo(50) },
-      { id: 'seed-b2', patientId: 'pat-jordan', doctorId: 'doc-shah', slot: 'Thu 29 Oct 11:00', mode: 'Online', interpreterId: 'int-tom', noShow: false, createdAt: hoursAgo(40) },
-      { id: 'seed-b3', patientId: 'pat-bisi', doctorId: 'doc-shah', slot: 'Fri 30 Oct 13:45', mode: 'Online', interpreterId: null, noShow: false, createdAt: hoursAgo(20) },
-      { id: 'seed-b4', patientId: 'pat-cara', doctorId: 'doc-novak', slot: 'Fri 30 Oct 09:00', mode: 'In person', interpreterId: null, noShow: false, createdAt: hoursAgo(18) },
-      { id: 'seed-b5', patientId: 'pat-alex', doctorId: 'doc-bell', slot: 'Thu 29 Oct 14:15', mode: 'In person', interpreterId: null, noShow: false, createdAt: hoursAgo(30) },
+      { id: 'seed-b1', patientId: 'pat-sam', doctorId: 'doc-bell', slot: 'Thu 29 Oct 09:30', mode: 'Online', durationMinutes: 30, interpreterId: 'int-amara', coInterpreterId: null, noShow: false, createdAt: hoursAgo(50) },
+      { id: 'seed-b2', patientId: 'pat-jordan', doctorId: 'doc-shah', slot: 'Thu 29 Oct 11:00', mode: 'Online', durationMinutes: 45, interpreterId: 'int-tom', coInterpreterId: null, noShow: false, createdAt: hoursAgo(40) },
+      { id: 'seed-b3', patientId: 'pat-bisi', doctorId: 'doc-shah', slot: 'Fri 30 Oct 13:45', mode: 'Online', durationMinutes: 90, interpreterId: null, coInterpreterId: null, noShow: false, createdAt: hoursAgo(20) },
+      { id: 'seed-b4', patientId: 'pat-cara', doctorId: 'doc-novak', slot: 'Fri 30 Oct 09:00', mode: 'In person', durationMinutes: 60, interpreterId: null, coInterpreterId: null, noShow: false, createdAt: hoursAgo(18) },
+      { id: 'seed-b6', patientId: 'pat-sam', doctorId: 'doc-bell', slot: 'Fri 30 Oct 20:30', mode: 'Online', durationMinutes: 30, interpreterId: 'int-amara', coInterpreterId: null, noShow: false, createdAt: hoursAgo(12) },
+      { id: 'seed-b5', patientId: 'pat-alex', doctorId: 'doc-bell', slot: 'Thu 29 Oct 14:15', mode: 'In person', durationMinutes: 30, interpreterId: null, coInterpreterId: null, noShow: false, createdAt: hoursAgo(30) },
     ],
     messages: [
       {
@@ -106,11 +110,11 @@ function seed(): PortalData {
     tasks: [
       {
         id: 'seed-t1', questionnaireId: 'seed-q-sam', patientId: 'pat-sam', doctorId: 'doc-bell', interpreterId: 'int-amara', matchScore: 81,
-        answerMode: 'record', answers: [], due: 'Thu 29 Oct 08:00', status: 'sent', createdAt: hoursAgo(30),
+        answerMode: 'record', answers: [], videoSeconds: 72, due: 'Thu 29 Oct 08:00', status: 'sent', createdAt: hoursAgo(30),
       },
       {
         id: 'seed-t2', questionnaireId: 'seed-m4', patientId: 'pat-bisi', doctorId: 'doc-shah', interpreterId: 'int-amara', matchScore: 74,
-        answerMode: 'type', answers: ['Mostly between 6 and 9, higher after dinner.', 'One mild hypo last Tuesday morning.'],
+        answerMode: 'record', answers: [], videoSeconds: 380,
         due: 'Fri 30 Oct 08:00', status: 'awaiting', createdAt: hoursAgo(10),
       },
     ],
@@ -129,7 +133,7 @@ function load(): PortalData {
     const saved = window.localStorage.getItem(storageKey)
     if (saved) {
       const parsed = JSON.parse(saved) as PortalData
-      if (parsed.version === 1) return purgeExpired(parsed)
+      if (parsed.version === 2) return purgeExpired(parsed)
     }
   } catch {
     // Storage blocked or corrupt: fall back to the seed data in memory.
