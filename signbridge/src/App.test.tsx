@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import App from './App'
@@ -65,26 +65,56 @@ describe('SignBridge care journey', () => {
     expect(screen.getByText('Alex Lewis with Dr Shah')).toBeInTheDocument()
   })
 
-  it('delivers messages from patient to doctor and back', async () => {
+  it('lets the patient choose any interpreter, not only the recommended ones', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^patient view/i }))
+    await user.click(screen.getByRole('tab', { name: /choose interpreter/i }))
+    const buttons = screen.getAllByRole('button', { name: /^choose /i })
+    expect(buttons).toHaveLength(interpreterProfiles.length)
+    buttons.forEach((button) => expect(button).toBeEnabled())
+    expect(screen.getAllByText(/choosing them sends a request to confirm/i).length).toBeGreaterThan(0)
+    await user.click(buttons.at(-1)!)
+    expect(screen.getByRole('button', { name: /chosen/i })).toBeInTheDocument()
+  })
+
+  it('delivers messages from patient to doctor and back in one conversation', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(screen.getByRole('button', { name: /^patient view/i }))
     await user.click(screen.getByRole('tab', { name: /messages/i }))
-    await user.selectOptions(screen.getByRole('combobox', { name: /^to$/i }), 'doc-bell')
-    await user.type(screen.getByRole('textbox', { name: /^message$/i }), 'Can I bring my partner to the appointment?')
-    await user.click(screen.getByRole('button', { name: /^send$/i }))
+    await user.selectOptions(screen.getByRole('combobox', { name: /start a conversation/i }), 'doc-bell')
+    await user.type(screen.getByRole('textbox', { name: /message to dr bell/i }), 'Can I bring my partner to the appointment?{Enter}')
+    expect(within(screen.getByRole('region', { name: /conversation with dr bell/i })).getByText('Can I bring my partner to the appointment?')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /^doctor$/i }))
-    expect(screen.getByText('Can I bring my partner to the appointment?')).toBeInTheDocument()
-    expect(screen.getByText('From Alex Lewis')).toBeInTheDocument()
-    await user.selectOptions(screen.getByRole('combobox', { name: /^to$/i }), 'pat-alex')
-    await user.type(screen.getByRole('textbox', { name: /^message$/i }), 'Yes, of course.')
-    await user.click(screen.getByRole('button', { name: /^send$/i }))
+    const doctorThread = screen.getByRole('region', { name: /conversation with alex lewis/i })
+    expect(within(doctorThread).getByText('Can I bring my partner to the appointment?')).toBeInTheDocument()
+    await user.type(within(doctorThread).getByRole('textbox', { name: /message to alex lewis/i }), 'Yes, of course.')
+    await user.click(within(doctorThread).getByRole('button', { name: /^send$/i }))
 
     await user.click(screen.getByRole('button', { name: /^patient$/i }))
+    expect(screen.getByRole('tab', { name: /messages/i })).toHaveTextContent(/2$/)
     await user.click(screen.getByRole('tab', { name: /messages/i }))
-    expect(screen.getByText('Yes, of course.')).toBeInTheDocument()
-    expect(screen.getByText('From Dr Bell')).toBeInTheDocument()
+    const patientThread = screen.getByRole('region', { name: /conversation with dr bell/i })
+    expect(within(patientThread).getByText('Yes, of course.')).toBeInTheDocument()
+    expect(within(patientThread).getByText('Can I bring my partner to the appointment?')).toBeInTheDocument()
+  })
+
+  it('shows a message sent in another tab without reloading', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: /^doctor view/i }))
+    const saved = JSON.parse(window.localStorage.getItem('signbridge-demo-portal-v2')!) as PortalData
+    saved.messages.push({
+      id: 'other-tab', from: { role: 'patient', id: 'pat-alex', name: 'Alex Lewis' }, to: { role: 'doctor', id: 'doc-bell', name: 'Dr Bell' },
+      kind: 'message', subject: 'Message from Alex Lewis', body: 'Sent from the other tab', createdAt: Date.now(),
+    })
+    const value = JSON.stringify(saved)
+    act(() => {
+      window.localStorage.setItem('signbridge-demo-portal-v2', value)
+      window.dispatchEvent(new StorageEvent('storage', { key: 'signbridge-demo-portal-v2', newValue: value }))
+    })
+    expect(within(screen.getByRole('region', { name: /conversation with alex lewis/i })).getByText('Sent from the other tab')).toBeInTheDocument()
   })
 
   it('routes questionnaire answers to the matched interpreter and the interpretation to the doctor', async () => {
@@ -105,7 +135,7 @@ describe('SignBridge care journey', () => {
     await user.click(screen.getByRole('button', { name: /send to dr bell/i }))
 
     await user.click(screen.getByRole('button', { name: /^doctor$/i }))
-    expect(screen.getByText('Interpretation: Alex Lewis pre-consultation')).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: /conversation with/i })).getByText('Interpretation: Alex Lewis pre-consultation')).toBeInTheDocument()
     const alexRow = screen.getByRole('cell', { name: 'Alex Lewis' }).closest('[role="row"]') as HTMLElement
     expect(within(alexRow).getByText('Interpreted')).toBeInTheDocument()
   })

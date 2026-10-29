@@ -56,6 +56,8 @@ export interface PortalData {
   messages: PortalMessage[]
   tasks: InterpretationTask[]
   reportedNoShows: Record<string, number>
+  // When each person last read each conversation, keyed `${readerId}|${otherId}`.
+  readAt: Record<string, number>
 }
 
 export const retentionDays = 7
@@ -119,6 +121,7 @@ function seed(): PortalData {
       },
     ],
     reportedNoShows: {},
+    readAt: {},
   }
 }
 
@@ -133,7 +136,7 @@ function load(): PortalData {
     const saved = window.localStorage.getItem(storageKey)
     if (saved) {
       const parsed = JSON.parse(saved) as PortalData
-      if (parsed.version === 2) return purgeExpired(parsed)
+      if (parsed.version === 2) return purgeExpired({ ...parsed, readAt: parsed.readAt ?? {} })
     }
   } catch {
     // Storage blocked or corrupt: fall back to the seed data in memory.
@@ -163,6 +166,18 @@ export function updatePortal(update: (data: PortalData) => PortalData) {
   state = purgeExpired(update(state))
   save(state)
   emit()
+}
+
+export function markRead(readerId: string, otherId: string) {
+  updatePortal((data) => ({ ...data, readAt: { ...data.readAt, [`${readerId}|${otherId}`]: Date.now() } }))
+}
+
+export function unreadCount(data: PortalData, readerId: string, fromId?: string) {
+  return data.messages.filter((message) =>
+    message.to.id === readerId
+    && (!fromId || message.from.id === fromId)
+    && message.createdAt > (data.readAt[`${readerId}|${message.from.id}`] ?? 0),
+  ).length
 }
 
 export function resetPortal() {
