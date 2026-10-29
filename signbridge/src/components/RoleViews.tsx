@@ -23,7 +23,7 @@ import {
   VideoCamera,
   WarningOctagon,
 } from '@phosphor-icons/react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { consultationNotes, roleLabels } from '../data/careJourney'
 import type { Role } from '../data/careJourney'
 import {
@@ -40,7 +40,7 @@ import {
   splitSlot,
 } from '../data/demoDirectory'
 import type { Mode } from '../data/demoDirectory'
-import { daysUntilDeleted, newId, resetPortal, updatePortal, usePortal } from '../data/portalStore'
+import { daysUntilDeleted, markRead, newId, resetPortal, unreadCount, updatePortal, usePortal } from '../data/portalStore'
 import type { Booking, InterpretationTask, Party, PortalData, PortalMessage } from '../data/portalStore'
 import { availableInterpreterCount, coInterpreterFor, modelInfo, rankInterpreters } from '../lib/matching'
 import { formatPounds, liveFee, rates, videoFee } from '../lib/pricing'
@@ -163,92 +163,131 @@ function ModelNote() {
   )
 }
 
-function MessageCenter({ me, contacts, data, allowQuestionnaire = false, hideQuestionnairesToMe = false }: {
+const partnerOf = (message: PortalMessage, meId: string) => (message.from.id === meId ? message.to : message.from)
+
+function MessageCenter({ me, contacts, data, allowQuestionnaire = false }: {
   me: Party
   contacts: Party[]
   data: PortalData
   allowQuestionnaire?: boolean
-  hideQuestionnairesToMe?: boolean
 }) {
-  const [toId, setToId] = useState(contacts[0]?.id ?? '')
+  const mine = data.messages.filter((message) => message.to.id === me.id || message.from.id === me.id)
+  const people = new Map<string, Party>()
+  contacts.forEach((contact) => people.set(contact.id, contact))
+  mine.forEach((message) => { const partner = partnerOf(message, me.id); people.set(partner.id, partner) })
+  const lastActivity = (id: string) => Math.max(0, ...mine.filter((message) => partnerOf(message, me.id).id === id).map((message) => message.createdAt))
+  const conversations = [...people.values()].filter((person) => lastActivity(person.id) > 0).sort((a, b) => lastActivity(b.id) - lastActivity(a.id))
+
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [kind, setKind] = useState<'message' | 'questionnaire'>('message')
-  const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
-  const to = contacts.find((contact) => contact.id === toId) ?? contacts[0]
-  const canAsk = allowQuestionnaire && to?.role === 'patient'
-  const messages = data.messages
-    .filter((message) => message.to.id === me.id || message.from.id === me.id)
-    .filter((message) => !(hideQuestionnairesToMe && message.kind === 'questionnaire' && message.to.id === me.id))
-    .sort((a, b) => b.createdAt - a.createdAt)
+  const selected = (selectedId && people.get(selectedId)) || conversations[0] || contacts[0]
+  const thread = selected ? mine.filter((message) => partnerOf(message, me.id).id === selected.id).sort((a, b) => a.createdAt - b.createdAt) : []
+  const unreadHere = selected ? unreadCount(data, me.id, selected.id) : 0
+  const canAsk = allowQuestionnaire && selected?.role === 'patient'
+  const asking = canAsk && kind === 'questionnaire'
+
+  useEffect(() => {
+    if (selected && unreadHere > 0) markRead(me.id, selected.id)
+  }, [me.id, selected, unreadHere])
 
   const send = () => {
-    if (!to || !body.trim()) return
-    const isQuestionnaire = canAsk && kind === 'questionnaire'
+    if (!selected || !body.trim()) return
     const lines = body.split('\n').map((line) => line.trim()).filter(Boolean)
     const message: PortalMessage = {
       id: newId(),
       from: me,
-      to,
-      kind: isQuestionnaire ? 'questionnaire' : 'message',
-      subject: subject.trim() || (isQuestionnaire ? 'Questions before your appointment' : `Message from ${me.name}`),
-      body: isQuestionnaire ? 'Please answer these questions in BSL or text.' : body.trim(),
-      questions: isQuestionnaire ? lines : undefined,
+      to: selected,
+      kind: asking ? 'questionnaire' : 'message',
+      subject: asking ? 'Questions before your appointment' : `Message from ${me.name}`,
+      body: asking ? 'Please answer these questions in BSL or text.' : body.trim(),
+      questions: asking ? lines : undefined,
       createdAt: Date.now(),
     }
-    updatePortal((current) => ({ ...current, messages: [...current.messages, message] }))
-    setSubject('')
+    updatePortal((current) => ({ ...current, messages: [...current.messages, message], readAt: { ...current.readAt, [`${me.id}|${selected.id}`]: Date.now() } }))
     setBody('')
+    setKind('message')
   }
 
   return (
-    <div className="message-center">
-      <div className="compose-box">
-        <h3>New message</h3>
-        <div className="compose-fields">
-          <label className="input-block"><span>To</span>
-            <select value={to?.id} onChange={(event) => setToId(event.target.value)}>
-              {contacts.map((contact) => <option value={contact.id} key={contact.id}>{contact.name} ({roleLabels[contact.role].toLowerCase()})</option>)}
-            </select>
-          </label>
-          {canAsk && (
-            <label className="input-block"><span>Type</span>
-              <select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}>
-                <option value="message">Message</option>
-                <option value="questionnaire">Questionnaire</option>
-              </select>
-            </label>
-          )}
-        </div>
-        <label className="input-block"><span>Subject</span><input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Optional" /></label>
-        <label className="input-block">
-          <span>{canAsk && kind === 'questionnaire' ? 'Questions, one per line' : 'Message'}</span>
-          <textarea rows={3} value={body} onChange={(event) => setBody(event.target.value)} />
+    <div className="messenger">
+      <aside className="conversation-list" aria-label="Conversations">
+        <label className="input-block start-conversation"><span>Start a conversation</span>
+          <select value="" onChange={(event) => event.target.value && setSelectedId(event.target.value)}>
+            <option value="">Choose a person</option>
+            {[...people.values()].map((person) => <option value={person.id} key={person.id}>{person.name} ({roleLabels[person.role].toLowerCase()})</option>)}
+          </select>
         </label>
-        {canAsk && kind === 'questionnaire' && <p className="panel-intro">The patient answers in BSL or text. The model assigns an interpreter, who returns an English interpretation to you.</p>}
-        <button className="primary-button" disabled={!body.trim() || !to} onClick={send}><PaperPlaneTilt size={20} />Send</button>
-      </div>
+        {conversations.length === 0 && <p className="panel-intro">No conversations yet.</p>}
+        <ul>
+          {conversations.map((person) => {
+            const last = [...mine].filter((message) => partnerOf(message, me.id).id === person.id).sort((a, b) => b.createdAt - a.createdAt)[0]
+            const unread = unreadCount(data, me.id, person.id)
+            return (
+              <li key={person.id}>
+                <button aria-pressed={selected?.id === person.id} onClick={() => setSelectedId(person.id)} aria-label={`${person.name}${unread ? `, ${unread} unread` : ''}`}>
+                  <span className="conversation-name"><strong>{person.name}</strong><small>{roleLabels[person.role]} · {timeAgo(last.createdAt)}</small></span>
+                  <span className="conversation-preview">{last.from.id === me.id ? 'You: ' : ''}{last.kind === 'message' ? last.body : last.subject}</span>
+                  {unread > 0 && <span className="tab-badge">{unread}</span>}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </aside>
 
-      <h3 className="message-list-title"><Tray size={20} />Inbox and sent</h3>
-      {messages.length === 0 && <p className="panel-intro">No messages yet.</p>}
-      <ul className="message-feed">
-        {messages.map((message) => {
-          const incoming = message.to.id === me.id
-          return (
-            <li className={`note-card ${incoming ? 'message-in' : 'message-out'}`} key={message.id}>
-              <div className="message-head">
-                <EnvelopeSimple size={18} />
-                <strong>{incoming ? `From ${message.from.name}` : `To ${message.to.name}`}</strong>
-                <span className={`kind-chip kind-${message.kind}`}>{message.kind === 'interpretation' ? 'Interpretation' : message.kind === 'questionnaire' ? 'Questionnaire' : 'Message'}</span>
-                <span>{timeAgo(message.createdAt)}</span>
+      <section className="thread" aria-label={selected ? `Conversation with ${selected.name}` : 'Conversation'}>
+        {selected && (
+          <>
+            <header className="thread-heading">
+              <strong>{selected.name}</strong>
+              <small>{roleLabels[selected.role]}</small>
+            </header>
+            <ol className="thread-messages" aria-live="polite">
+              {thread.length === 0 && <li className="panel-intro">No messages with {selected.name} yet. Say hello below.</li>}
+              {thread.map((message) => {
+                const outgoing = message.from.id === me.id
+                return (
+                  <li className={`bubble ${outgoing ? 'bubble-out' : 'bubble-in'}`} key={message.id}>
+                    {message.kind !== 'message' && (
+                      <span className={`kind-chip kind-${message.kind}`}>{message.kind === 'interpretation' ? 'Interpretation' : 'Questionnaire'}</span>
+                    )}
+                    {message.kind !== 'message' && <strong>{message.subject}</strong>}
+                    <p>{message.body}</p>
+                    {message.questions && <ol className="question-list">{message.questions.map((question) => <li key={question}>{question}</li>)}</ol>}
+                    <small>{outgoing ? 'You' : message.from.name} · {timeAgo(message.createdAt)} · deleted in {daysUntilDeleted(message.createdAt)} days</small>
+                  </li>
+                )
+              })}
+            </ol>
+            <form className="thread-composer" onSubmit={(event) => { event.preventDefault(); send() }}>
+              {canAsk && (
+                <label className="composer-kind"><span>Type</span>
+                  <select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}>
+                    <option value="message">Message</option>
+                    <option value="questionnaire">Questionnaire</option>
+                  </select>
+                </label>
+              )}
+              <label className="input-block">
+                <span>{asking ? `Questions for ${selected.name}, one per line` : `Message to ${selected.name}`}</span>
+                <textarea
+                  rows={2}
+                  value={body}
+                  onChange={(event) => setBody(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey && !asking) { event.preventDefault(); send() }
+                  }}
+                />
+              </label>
+              <div className="composer-row">
+                <small>{asking ? 'The patient answers in BSL or text, and a matched interpreter returns it to you.' : 'Enter to send · Shift + Enter for a new line'}</small>
+                <button type="submit" className="primary-button" disabled={!body.trim()}><PaperPlaneTilt size={20} />Send</button>
               </div>
-              <h4>{message.subject}</h4>
-              <p>{message.body}</p>
-              {message.questions && <ol className="question-list">{message.questions.map((question) => <li key={question}>{question}</li>)}</ol>}
-              <p className="retention-note"><Clock size={15} />Deleted in {daysUntilDeleted(message.createdAt)} days</p>
-            </li>
-          )
-        })}
-      </ul>
+            </form>
+          </>
+        )}
+      </section>
     </div>
   )
 }
@@ -278,7 +317,7 @@ function PatientView({ data, onStartConversation }: { data: PortalData; onStartC
         tabs={[
           { id: 'book', label: 'Book a slot' },
           { id: 'interpreter', label: 'Choose interpreter', badge: myBookings.filter((booking) => !booking.interpreterId && !booking.noShow).length },
-          { id: 'messages', label: 'Messages', badge: openQuestionnaires.length },
+          { id: 'messages', label: 'Messages', badge: openQuestionnaires.length + unreadCount(data, me.id) },
           { id: 'notes', label: 'My notes' },
         ]}
       />
@@ -297,7 +336,14 @@ function PatientView({ data, onStartConversation }: { data: PortalData; onStartC
           <h2>Messages</h2>
           {openQuestionnaires.map((questionnaire) => <QuestionnaireAnswer data={data} questionnaire={questionnaire} key={questionnaire.id} />)}
           <SentAnswers data={data} />
-          <MessageCenter me={me} data={data} contacts={doctors.map((doctor) => partyFor('doctor', doctor.id))} hideQuestionnairesToMe />
+          <MessageCenter
+            me={me}
+            data={data}
+            contacts={[
+              ...doctors.map((doctor) => partyFor('doctor', doctor.id)),
+              ...[...new Set(myBookings.flatMap((booking) => [booking.interpreterId, booking.coInterpreterId]).filter((id): id is string => Boolean(id)))].map((id) => partyFor('interpreter', id)),
+            ]}
+          />
         </div>
       )}
       {tab === 'notes' && <PatientNotes />}
@@ -442,7 +488,7 @@ function PatientInterpreterChoice({ data, myBookings, bookingId, onSelectBooking
           const chosen = booking.interpreterId === match.interpreter.id
           const isCo = booking.coInterpreterId === match.interpreter.id
           return (
-            <li className={`interpreter-card${chosen || isCo ? ' chosen' : ''}${match.available || isCo ? '' : ' unavailable'}`} key={match.interpreter.id}>
+            <li className={`interpreter-card${chosen || isCo ? ' chosen' : ''}`} key={match.interpreter.id}>
               <span className="interpreter-rank">{index + 1}</span>
               <span className="interpreter-initials" aria-hidden="true">{match.interpreter.initials}</span>
               <div className="interpreter-copy">
@@ -451,11 +497,11 @@ function PatientInterpreterChoice({ data, myBookings, bookingId, onSelectBooking
                 <small>{match.score}% predicted good session · {match.interpreter.region} BSL · {match.interpreter.modes.join(' or ')}</small>
                 <ReasonChips match={match} />
                 {match.penalised && <small className="flag-text"><WarningOctagon size={15} weight="fill" />Last priority: missed an appointment</small>}
-                {!match.available && <small className="flag-text muted">Not available for this time or mode</small>}
+                {!match.available && !chosen && !isCo && <small className="availability-note">Not on their declared availability for this time or mode. Choosing them sends a request to confirm.</small>}
               </div>
               <button
                 className={chosen ? 'primary-button small-button' : 'secondary-button small-button'}
-                disabled={!match.available || isCo}
+                disabled={isCo}
                 onClick={() => choose(match.interpreter.id)}
               >
                 {chosen ? <><CheckCircle size={18} weight="fill" />{booking.durationMinutes > 60 ? 'Lead' : 'Chosen'}</> : isCo ? <><CheckCircle size={18} weight="fill" />Co-interpreter</> : `Choose ${match.interpreter.name.split(' ')[0]}`}
@@ -692,7 +738,7 @@ function InterpreterView({ data }: { data: PortalData }) {
       </section>
 
       <section className="portal-panel" aria-labelledby="interpreter-messages-title">
-        <h2 id="interpreter-messages-title"><ChatCircleText size={24} />Messages</h2>
+        <h2 id="interpreter-messages-title"><ChatCircleText size={24} />Messages{unreadCount(data, me.id) > 0 && <span className="tab-badge">{unreadCount(data, me.id)} unread</span>}</h2>
         <MessageCenter me={meParty} contacts={contacts} data={data} key={me.id} />
       </section>
 
@@ -779,8 +825,8 @@ function DoctorView({ data }: { data: PortalData }) {
   }
 
   const contacts = [...new Map([
-    ...schedule.map((booking) => partyFor('patient', booking.patientId)),
     partyFor('patient', demoPatientId),
+    ...schedule.map((booking) => partyFor('patient', booking.patientId)),
     ...schedule.filter((booking) => booking.interpreterId).map((booking) => partyFor('interpreter', booking.interpreterId as string)),
   ].map((party) => [party.id, party])).values()]
 
@@ -823,7 +869,7 @@ function DoctorView({ data }: { data: PortalData }) {
       </section>
 
       <section className="portal-panel" aria-labelledby="doctor-messages-title">
-        <h2 id="doctor-messages-title"><ChatCircleText size={24} />Messages</h2>
+        <h2 id="doctor-messages-title"><ChatCircleText size={24} />Messages{unreadCount(data, me.id) > 0 && <span className="tab-badge">{unreadCount(data, me.id)} unread</span>}</h2>
         <MessageCenter me={meParty} contacts={contacts} data={data} allowQuestionnaire key={me.id} />
       </section>
 
