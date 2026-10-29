@@ -39,25 +39,15 @@ describe('SignBridge care journey', () => {
     expect(screen.getByRole('button', { name: /thu 29 oct.*already booked/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /mon 2 nov.*no interpreter free/i })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: /tue 3 nov.*09:30/i }))
+    const picks = screen.getByRole('group', { name: /choose your interpreter/i })
+    const recommendedPick = within(picks).getAllByRole('radio').find((radio) => (radio as HTMLInputElement).checked)!
+    const chosen = interpreterProfiles.find((item) => recommendedPick.closest('label')!.textContent!.startsWith(item.name))!
     await user.click(screen.getByRole('button', { name: /book appointment/i }))
-    expect(screen.getByText(/booked with dr shah on tue 3 nov 09:30/i)).toBeInTheDocument()
+    expect(screen.getByText(/booked with dr shah on tue 3 nov 09:30/i)).toHaveTextContent(chosen.name)
 
     await user.click(screen.getByRole('button', { name: /^doctor$/i }))
     await user.selectOptions(screen.getByRole('combobox', { name: /viewing as doctor/i }), 'doc-shah')
-    let alexRow = screen.getByRole('cell', { name: 'Alex Lewis' }).closest('[role="row"]') as HTMLElement
-    expect(within(alexRow).getByText('Patient choosing')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: /^patient$/i }))
-    await user.click(screen.getAllByRole('button', { name: /choose an interpreter/i })[1])
-    expect(screen.getByText(/ranked by a logistic regression trained with scikit-learn/i)).toBeInTheDocument()
-    const chooseButton = screen.getAllByRole('button', { name: /^choose /i }).find((button) => !button.hasAttribute('disabled'))!
-    const chosenFirstName = chooseButton.textContent!.replace('Choose ', '')
-    await user.click(chooseButton)
-    const chosen = interpreterProfiles.find((item) => item.name.startsWith(chosenFirstName))!
-
-    await user.click(screen.getByRole('button', { name: /^doctor$/i }))
-    await user.selectOptions(screen.getByRole('combobox', { name: /viewing as doctor/i }), 'doc-shah')
-    alexRow = screen.getByRole('cell', { name: 'Alex Lewis' }).closest('[role="row"]') as HTMLElement
+    const alexRow = screen.getByRole('cell', { name: 'Alex Lewis' }).closest('[role="row"]') as HTMLElement
     expect(within(alexRow).getByText(chosen.name)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /^bsl interpreter$/i }))
@@ -189,6 +179,50 @@ describe('SignBridge care journey', () => {
   })
 })
 
+describe('interpreter availability and requirements', () => {
+  beforeEach(() => resetPortal())
+
+  it('lets interpreters report availability that patients can then book', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^patient view/i }))
+    await user.click(screen.getByRole('radio', { name: /dr shah/i }))
+    expect(screen.getByRole('button', { name: /mon 2 nov.*15:00.*no interpreter free/i })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: /^bsl interpreter$/i }))
+    const availability = screen.getByRole('region', { name: /your availability/i })
+    expect(within(availability).getByRole('button', { name: 'Thu 29 Oct 09:30: Booked' })).toBeDisabled()
+    await user.click(within(availability).getByRole('button', { name: 'Mon 2 Nov 15:00: Not available' }))
+    expect(within(availability).getByRole('button', { name: 'Mon 2 Nov 15:00: Available' })).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(screen.getByRole('button', { name: /^patient$/i }))
+    await user.click(screen.getByRole('radio', { name: /dr shah/i }))
+    expect(screen.getByRole('button', { name: /mon 2 nov.*15:00.*1 interpreter free/i })).toBeEnabled()
+  })
+
+  it('recommends interpreters from the requirements the patient states', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^patient view/i }))
+    await user.click(screen.getByRole('radio', { name: /joints, muscles or an injury/i }))
+    await user.click(screen.getByRole('button', { name: /tue 3 nov.*11:30/i }))
+    const picks = screen.getByRole('group', { name: /choose your interpreter/i })
+    expect(within(picks).getByText(/joints, muscles or an injury · online/i)).toBeInTheDocument()
+    expect(within(picks).getAllByText('Recommended')).toHaveLength(3)
+    within(picks).getAllByRole('radio').forEach((radio) => expect(radio).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: /book appointment/i }))
+    await user.click(screen.getByRole('tab', { name: /choose interpreter/i }))
+    await user.click(screen.getByRole('radio', { name: /tue 3 nov 11:30/i }))
+    expect(screen.getByText(/based on your requirements:/i)).toHaveTextContent(/joints, muscles or an injury/i)
+
+    let snapshot: PortalData | undefined
+    updatePortal((data) => (snapshot = data))
+    const physio = rankInterpreters(snapshot!, { patientId: 'pat-alex', doctorId: 'doc-bell', treatmentArea: 'Physiotherapy' })
+    const amara = physio.find((match) => match.interpreter.id === 'int-amara')!
+    expect(amara.features.specialtyExperience).toBe(interpreterProfiles[0].specialtyExperience.Physiotherapy)
+  })
+})
+
 describe('interpreter matching model', () => {
   beforeEach(() => resetPortal())
 
@@ -271,9 +305,9 @@ describe('interpreter pricing and earnings', () => {
     await user.click(screen.getByRole('radio', { name: /2 interpreters needed/i }))
     await user.click(screen.getByRole('button', { name: /tue 3 nov.*11:30/i }))
     await user.click(screen.getByRole('button', { name: /book appointment/i }))
-    await user.click(screen.getAllByRole('button', { name: /choose an interpreter/i }).at(-1)!)
+    await user.click(screen.getByRole('tab', { name: /choose interpreter/i }))
+    await user.click(screen.getByRole('radio', { name: /tue 3 nov 11:30/i }))
     expect(screen.getByText(/this appointment needs 2 interpreters/i)).toBeInTheDocument()
-    await user.click(screen.getAllByRole('button', { name: /^choose /i })[0])
     expect(screen.getByRole('button', { name: /co-interpreter/i })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /^doctor$/i }))

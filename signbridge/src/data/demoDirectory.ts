@@ -120,6 +120,16 @@ export const interpreterProfiles: InterpreterProfile[] = [
   },
 ]
 
+// What a patient can say they need help with, and the treatment area interpreters are matched on.
+export const patientNeeds: Array<{ id: string; label: string; specialty: Specialty }> = [
+  { id: 'heart', label: 'Heart, chest pain or blood pressure', specialty: 'Cardiology' },
+  { id: 'diabetes', label: 'Blood sugar or diabetes', specialty: 'Diabetes' },
+  { id: 'joints', label: 'Joints, muscles or an injury', specialty: 'Physiotherapy' },
+]
+
+// Every appointment time any doctor offers, which interpreters can declare themselves free for.
+export const allSlots = [...new Set(doctors.flatMap((doctor) => doctor.slots))].sort((a, b) => slotOrder(a) - slotOrder(b))
+
 export const findDoctor = (id: string) => doctors.find((doctor) => doctor.id === id)
 export const findPatient = (id: string) => patients.find((patient) => patient.id === id)
 export const findInterpreter = (id: string | null) => interpreterProfiles.find((interpreter) => interpreter.id === id)
