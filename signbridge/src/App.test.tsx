@@ -178,12 +178,24 @@ describe('interpreter pricing and earnings', () => {
     const earnings = screen.getByRole('region', { name: /earnings/i })
     // Amara: £60 + £90 out of hours live, £50 + £70 video translation.
     expect(within(earnings).getAllByText('£270.00').length).toBeGreaterThan(0)
-    expect(within(earnings).getByText('£50.00', { selector: 'dd' })).toBeInTheDocument()
+    expect(within(earnings).getByText(/£50\.00 already earned/i)).toBeInTheDocument()
+    expect(within(earnings).getByRole('columnheader', { name: 'Breakdown' })).toBeInTheDocument()
+    expect(within(earnings).getByRole('columnheader', { name: 'Earnings' })).toBeInTheDocument()
     expect(within(earnings).getByText(/out of hours × 1\.5/i)).toBeInTheDocument()
 
     const recommendations = screen.getByRole('region', { name: /new appointments recommended for you/i })
     await user.click(within(recommendations).getAllByRole('button', { name: /^accept$/i })[0])
     expect(within(screen.getByRole('region', { name: /earnings/i })).getAllByText('£330.00').length).toBeGreaterThan(0)
+  })
+
+  it('only books appointments over an hour when 2 interpreters are free', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^patient view/i }))
+    await user.click(screen.getByRole('radio', { name: /dr novak/i }))
+    expect(screen.getByRole('button', { name: /tue 3 nov.*14:00.*1 interpreter free/i })).toBeEnabled()
+    await user.click(screen.getByRole('radio', { name: /2 interpreters needed/i }))
+    expect(screen.getByRole('button', { name: /tue 3 nov.*14:00.*needs 2 interpreters, 1 free/i })).toBeDisabled()
   })
 
   it('adds a co-interpreter automatically for appointments over an hour', async () => {
@@ -192,14 +204,24 @@ describe('interpreter pricing and earnings', () => {
     await user.click(screen.getByRole('button', { name: /^bsl interpreter view/i }))
     const recommendations = screen.getByRole('region', { name: /new appointments recommended for you/i })
     const bisiCard = within(recommendations).getByText(/bisi okonjo/i).closest('article') as HTMLElement
-    expect(within(bisiCard).getByText(/you earn £90\.00/i)).toBeInTheDocument()
+    expect(within(bisiCard).getByText(/earnings: £90\.00 · needs 2 interpreters/i)).toBeInTheDocument()
     await user.click(within(bisiCard).getByRole('button', { name: /^accept$/i }))
 
     await user.click(screen.getByRole('button', { name: /^doctor$/i }))
     await user.selectOptions(screen.getByRole('combobox', { name: /viewing as doctor/i }), 'doc-shah')
     const bisiRow = screen.getByRole('cell', { name: 'Bisi Okonjo' }).closest('[role="row"]') as HTMLElement
     expect(within(bisiRow).getByText(/^Amara Okafor \+ .+/)).toBeInTheDocument()
-    expect(within(bisiRow).getByText('£180.00')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: /rate amara okafor/i })).toBeInTheDocument()
+  })
+
+  it('keeps pay out of the patient and doctor views', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^doctor view/i }))
+    expect(screen.queryByText(/£\d/)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^patient$/i }))
+    await user.click(screen.getByRole('button', { name: /thu 29 oct.*10:00|fri 30 oct.*10:00/i }))
+    expect(screen.queryByText(/£\d/)).not.toBeInTheDocument()
   })
 })
 
