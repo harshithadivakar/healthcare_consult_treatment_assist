@@ -5,6 +5,7 @@ import {
   ChatCircleText,
   CheckCircle,
   Clock,
+  CurrencyGbp,
   EnvelopeSimple,
   Keyboard,
   ListChecks,
@@ -26,6 +27,7 @@ import { useState } from 'react'
 import { consultationNotes, roleLabels } from '../data/careJourney'
 import type { Role } from '../data/careJourney'
 import {
+  currentWeekDays,
   demoDays,
   demoPatientId,
   doctors,
@@ -40,7 +42,9 @@ import {
 import type { Mode } from '../data/demoDirectory'
 import { daysUntilDeleted, newId, resetPortal, updatePortal, usePortal } from '../data/portalStore'
 import type { Booking, InterpretationTask, Party, PortalData, PortalMessage } from '../data/portalStore'
-import { availableInterpreterCount, modelInfo, rankInterpreters } from '../lib/matching'
+import { availableInterpreterCount, coInterpreterFor, modelInfo, rankInterpreters } from '../lib/matching'
+import { formatPounds, liveFee, rates, videoFee } from '../lib/pricing'
+import type { Fee } from '../lib/pricing'
 import type { Match } from '../lib/matching'
 import { roleIcons } from './CareJourney'
 
@@ -84,6 +88,9 @@ const partyFor = (role: Role, id: string): Party => ({
 const patientName = (id: string) => findPatient(id)?.name ?? id
 const doctorName = (id: string) => findDoctor(id)?.name ?? id
 const bySlot = (a: Booking, b: Booking) => slotOrder(a.slot) - slotOrder(b.slot)
+const interpreterNames = (booking: Booking) =>
+  [booking.interpreterId, booking.coInterpreterId].map((id) => findInterpreter(id)?.name).filter(Boolean).join(' + ')
+const durationLabel = (minutes: number) => minutes % 60 === 0 ? `${minutes / 60} h` : minutes > 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes} min`
 
 function timeAgo(createdAt: number) {
   const minutes = Math.round((Date.now() - createdAt) / 60000)
@@ -302,14 +309,15 @@ function PatientBooking({ data, myBookings, onChoose }: { data: PortalData; myBo
   const [doctorId, setDoctorId] = useState(doctors[0].id)
   const [slot, setSlot] = useState<string | null>(null)
   const [mode, setMode] = useState<Mode>('Online')
+  const [duration, setDuration] = useState(30)
   const [confirmation, setConfirmation] = useState('')
   const doctor = findDoctor(doctorId) ?? doctors[0]
 
   const book = () => {
     if (!slot) return
-    const booking: Booking = { id: newId(), patientId: demoPatientId, doctorId, slot, mode, interpreterId: null, noShow: false, createdAt: Date.now() }
+    const booking: Booking = { id: newId(), patientId: demoPatientId, doctorId, slot, mode, durationMinutes: duration, interpreterId: null, coInterpreterId: null, noShow: false, createdAt: Date.now() }
     updatePortal((current) => ({ ...current, bookings: [...current.bookings, booking] }))
-    setConfirmation(`Booked with ${doctor.name} on ${slot}, ${mode.toLowerCase()}. It is now on ${doctor.name}’s schedule.`)
+    setConfirmation(`Booked with ${doctor.name} on ${slot}, ${mode.toLowerCase()}, ${durationLabel(duration)}. It is now on ${doctor.name}’s schedule.`)
     setSlot(null)
   }
 
@@ -335,6 +343,15 @@ function PatientBooking({ data, myBookings, onChoose }: { data: PortalData; myBo
           </label>
         ))}
       </fieldset>
+      <fieldset className="mode-choice">
+        <legend>How long do you need?</legend>
+        {[30, 60, 90].map((minutes) => (
+          <label key={minutes}>
+            <input type="radio" name="duration" checked={duration === minutes} onChange={() => setDuration(minutes)} />
+            {durationLabel(minutes)}{minutes > 60 ? ' (two interpreters)' : ''}
+          </label>
+        ))}
+      </fieldset>
       <div className="slot-grid">
         {doctor.slots.map((item) => {
           const taken = data.bookings.some((booking) => booking.doctorId === doctorId && booking.slot === item)
@@ -349,6 +366,7 @@ function PatientBooking({ data, myBookings, onChoose }: { data: PortalData; myBo
           )
         })}
       </div>
+      {slot && <p className="cost-note"><ShieldCheck size={18} />Free to you. {doctor.practice} pays the interpreter ({formatPounds(liveFee(duration, slot).total)}), as the Equality Act 2010 requires.</p>}
       <button className="primary-button" disabled={!slot} onClick={book}><CalendarCheck size={20} />Book appointment</button>
       {confirmation && <p className="portal-success" role="status"><CheckCircle size={20} weight="fill" />{confirmation}</p>}
 
@@ -359,9 +377,9 @@ function PatientBooking({ data, myBookings, onChoose }: { data: PortalData; myBo
           const interpreter = findInterpreter(booking.interpreterId)
           return (
             <li key={booking.id}>
-              <span className="booking-when"><strong>{booking.slot}</strong><small>{doctorName(booking.doctorId)} · {booking.mode}</small></span>
+              <span className="booking-when"><strong>{booking.slot}</strong><small>{doctorName(booking.doctorId)} · {booking.mode} · {durationLabel(booking.durationMinutes)}</small></span>
               {booking.noShow ? <span className="pre-status pre-awaiting-patient">Interpreter no-show reported</span>
-                : interpreter ? <span className="pre-status pre-interpreted">Interpreter: {interpreter.name}</span>
+                : interpreter ? <span className="pre-status pre-interpreted">Interpreter: {interpreterNames(booking)}</span>
                   : <button className="secondary-button small-button" onClick={() => onChoose(booking.id)}>Choose an interpreter</button>}
             </li>
           )
@@ -386,7 +404,9 @@ function PatientInterpreterChoice({ data, myBookings, bookingId, onSelectBooking
 
   const choose = (interpreterId: string) => updatePortal((current) => ({
     ...current,
-    bookings: current.bookings.map((item) => item.id === booking.id ? { ...item, interpreterId } : item),
+    bookings: current.bookings.map((item) => item.id === booking.id
+      ? { ...item, interpreterId, coInterpreterId: coInterpreterFor(current, item, interpreterId) }
+      : item),
   }))
 
   const reportNoShow = () => {
@@ -412,7 +432,8 @@ function PatientInterpreterChoice({ data, myBookings, bookingId, onSelectBooking
           ))}
         </div>
       )}
-      <p className="panel-intro">For <strong>{booking.slot}</strong> with {doctorName(booking.doctorId)} ({findDoctor(booking.doctorId)?.specialty}), {booking.mode.toLowerCase()}.</p>
+      <p className="panel-intro">For <strong>{booking.slot}</strong> with {doctorName(booking.doctorId)} ({findDoctor(booking.doctorId)?.specialty}), {booking.mode.toLowerCase()}, {durationLabel(booking.durationMinutes)}.</p>
+      {booking.durationMinutes > 60 && <p className="cost-note"><ShieldCheck size={18} />Over an hour, the platform adds a second interpreter so they can take turns and avoid fatigue.{booking.coInterpreterId && ` Co-interpreter: ${findInterpreter(booking.coInterpreterId)?.name}.`}</p>}
       <ModelNote />
       <ol className="interpreter-list">
         {matches.map((match, index) => {
@@ -474,6 +495,7 @@ function QuestionnaireAnswer({ data, questionnaire }: { data: PortalData; questi
       matchScore: best.score,
       answerMode,
       answers: answerMode === 'type' ? answers : [],
+      videoSeconds: answerMode === 'record' ? 72 : 0,
       due: appointment ? slotKey(splitSlot(appointment.slot).day, '08:00') : 'Fri 30 Oct 17:00',
       status: 'awaiting',
       createdAt: Date.now(),
@@ -554,14 +576,14 @@ function InterpreterView({ data }: { data: PortalData }) {
   const [declined, setDeclined] = useState<string[]>([])
   const me = findInterpreter(meId) ?? interpreterProfiles[0]
   const meParty = partyFor('interpreter', me.id)
-  const myBookings = data.bookings.filter((booking) => booking.interpreterId === me.id && !booking.noShow)
+  const myBookings = data.bookings.filter((booking) => (booking.interpreterId === me.id || booking.coInterpreterId === me.id) && !booking.noShow)
   const myTasks = data.tasks.filter((task) => task.interpreterId === me.id)
   const penalised = (data.reportedNoShows[me.id] ?? 0) > 0
 
   const calendar = [
     ...myBookings.map((booking) => ({
       id: booking.id, slot: booking.slot, kind: 'appointment' as CalendarKind,
-      title: `Consultation · ${booking.mode}`, detail: `${patientName(booking.patientId)} with ${doctorName(booking.doctorId)}`,
+      title: `Consultation · ${booking.mode}${booking.coInterpreterId === me.id ? ' (co-interpreter)' : ''}`, detail: `${patientName(booking.patientId)} with ${doctorName(booking.doctorId)}`,
     })),
     ...myTasks.filter((task) => task.status === 'awaiting').map((task) => ({
       id: task.id, slot: task.due, kind: 'deadline' as CalendarKind,
@@ -582,7 +604,9 @@ function InterpreterView({ data }: { data: PortalData }) {
 
   const accept = (bookingId: string) => updatePortal((current) => ({
     ...current,
-    bookings: current.bookings.map((item) => item.id === bookingId && !item.interpreterId ? { ...item, interpreterId: me.id } : item),
+    bookings: current.bookings.map((item) => item.id === bookingId && !item.interpreterId
+      ? { ...item, interpreterId: me.id, coInterpreterId: coInterpreterFor(current, item, me.id) }
+      : item),
   }))
 
   const contacts = [
@@ -631,6 +655,8 @@ function InterpreterView({ data }: { data: PortalData }) {
         </div>
       </section>
 
+      <InterpreterEarnings data={data} interpreterId={me.id} />
+
       <section className="portal-panel" aria-labelledby="inbox-title">
         <h2 id="inbox-title"><Tray size={24} />Interpretations to do</h2>
         {myTasks.filter((task) => task.status === 'awaiting').length === 0 && <p className="panel-intro">Nothing waiting. New answers from patients appear here.</p>}
@@ -649,7 +675,8 @@ function InterpreterView({ data }: { data: PortalData }) {
                 <span className="match-score">{match.score}% match · #{position + 1}</span>
               </div>
               <h3>{patientName(booking.patientId)} · {findDoctor(booking.doctorId)?.specialty}</h3>
-              <p className="task-meta"><Clock size={16} />{booking.slot} with {doctorName(booking.doctorId)}</p>
+              <p className="task-meta"><Clock size={16} />{booking.slot} with {doctorName(booking.doctorId)} · {durationLabel(booking.durationMinutes)}</p>
+              <p className="task-meta"><CurrencyGbp size={16} />You earn {formatPounds(liveFee(booking.durationMinutes, booking.slot).perInterpreter)}</p>
               <details>
                 <summary>Why you were matched</summary>
                 <ReasonChips match={match} limit={4} />
@@ -720,7 +747,7 @@ function InterpretationWork({ data, task, me }: { data: PortalData; task: Interp
     <article className="questionnaire-card">
       <div className="message-head"><strong>{patient}</strong><span>for {doctorName(task.doctorId)}</span><span className="kind-chip kind-pre-deadline">Due {task.due}</span><span className="match-score">{task.matchScore}% match</span></div>
       {task.answerMode === 'record' ? (
-        <div className="record-stage compact"><VideoCamera size={32} weight="duotone" /><p><strong>Simulated BSL recording, 1 min 12 s.</strong> In a real service you would watch the patient’s video here.</p></div>
+        <div className="record-stage compact"><VideoCamera size={32} weight="duotone" /><p><strong>Simulated BSL recording, {Math.floor(task.videoSeconds / 60)} min {task.videoSeconds % 60} s.</strong> You earn {formatPounds(videoFee(task.videoSeconds).total)}. In a real service you would watch the patient’s video here.</p></div>
       ) : (
         <dl className="answer-list">
           {questions.map((question, index) => <div key={question}><dt>{question}</dt><dd>{task.answers[index] || 'No answer'}</dd></div>)}
@@ -770,11 +797,12 @@ function DoctorView({ data }: { data: PortalData }) {
 
       <section className="portal-panel" aria-labelledby="schedule-title">
         <h2 id="schedule-title">Schedule</h2>
+        <p className="panel-intro">{me.practice} pays for interpreters, as the Equality Act 2010 requires. Patients are never charged.</p>
         {schedule.length === 0 && <p className="panel-intro">No appointments booked yet.</p>}
         {schedule.length > 0 && (
           <div className="schedule-table" role="table" aria-label="Appointments">
             <div className="schedule-row schedule-head" role="row">
-              <span role="columnheader">When</span><span role="columnheader">Patient</span><span role="columnheader">Interpreter</span><span role="columnheader">Mode</span><span role="columnheader">Pre-consultation</span>
+              <span role="columnheader">When</span><span role="columnheader">Patient</span><span role="columnheader">Interpreter</span><span role="columnheader">Mode</span><span role="columnheader">Pre-consultation</span><span role="columnheader">Interpreting cost</span>
             </div>
             {schedule.map((booking) => {
               const status = preConsultStatus(booking.patientId)
@@ -782,9 +810,10 @@ function DoctorView({ data }: { data: PortalData }) {
                 <div className="schedule-row" role="row" key={booking.id}>
                   <span role="cell"><strong>{booking.slot}</strong></span>
                   <span role="cell">{patientName(booking.patientId)}</span>
-                  <span role="cell">{booking.noShow ? 'No-show reported' : findInterpreter(booking.interpreterId)?.name ?? 'Patient choosing'}</span>
-                  <span role="cell">{booking.mode === 'Online' ? <VideoCamera size={17} /> : <MapPin size={17} />}{booking.mode}</span>
+                  <span role="cell">{booking.noShow ? 'No-show reported' : interpreterNames(booking) || 'Patient choosing'}</span>
+                  <span role="cell">{booking.mode === 'Online' ? <VideoCamera size={17} /> : <MapPin size={17} />}{booking.mode} · {durationLabel(booking.durationMinutes)}</span>
                   <span role="cell"><span className={`pre-status pre-${status.toLowerCase().replaceAll(' ', '-')}`}>{status}</span></span>
+                  <span role="cell">{formatPounds(liveFee(booking.durationMinutes, booking.slot).total)}</span>
                 </div>
               )
             })}
@@ -797,5 +826,85 @@ function DoctorView({ data }: { data: PortalData }) {
         <MessageCenter me={meParty} contacts={contacts} data={data} allowQuestionnaire key={me.id} />
       </section>
     </div>
+  )
+}
+
+interface EarningsJob {
+  id: string
+  slot: string
+  kind: 'Live consultation' | 'Video translation'
+  detail: string
+  fee: Fee
+  status: 'Booked' | 'To do' | 'Done'
+}
+
+function InterpreterEarnings({ data, interpreterId }: { data: PortalData; interpreterId: string }) {
+  const jobs: EarningsJob[] = [
+    ...data.bookings
+      .filter((booking) => (booking.interpreterId === interpreterId || booking.coInterpreterId === interpreterId) && !booking.noShow)
+      .map((booking) => ({
+        id: booking.id,
+        slot: booking.slot,
+        kind: 'Live consultation' as const,
+        detail: `${patientName(booking.patientId)} with ${doctorName(booking.doctorId)} · ${booking.mode} · ${durationLabel(booking.durationMinutes)}`,
+        fee: liveFee(booking.durationMinutes, booking.slot),
+        status: 'Booked' as const,
+      })),
+    ...data.tasks
+      .filter((task) => task.interpreterId === interpreterId && task.videoSeconds > 0)
+      .map((task) => ({
+        id: task.id,
+        slot: task.due,
+        kind: 'Video translation' as const,
+        detail: `${patientName(task.patientId)} for ${doctorName(task.doctorId)} · ${Math.floor(task.videoSeconds / 60)} min ${task.videoSeconds % 60} s video`,
+        fee: videoFee(task.videoSeconds),
+        status: task.status === 'sent' ? 'Done' as const : 'To do' as const,
+      })),
+  ].sort((a, b) => slotOrder(a.slot) - slotOrder(b.slot))
+
+  const inWeek = (job: EarningsJob) => currentWeekDays.includes(splitSlot(job.slot).day)
+  const sum = (items: EarningsJob[]) => items.reduce((total, job) => total + job.fee.perInterpreter, 0)
+  const thisWeek = jobs.filter(inWeek)
+  const nextWeek = jobs.filter((job) => !inWeek(job))
+
+  return (
+    <section className="portal-panel" aria-labelledby="earnings-title">
+      <h2 id="earnings-title"><CurrencyGbp size={24} />Earnings</h2>
+      <dl className="earnings-summary">
+        <div className="earnings-main"><dt>Expected this week</dt><dd>{formatPounds(sum(thisWeek))}</dd><small>Mon 26 Oct to Sun 1 Nov · {thisWeek.length} job{thisWeek.length === 1 ? '' : 's'}</small></div>
+        <div><dt>Already earned</dt><dd>{formatPounds(sum(thisWeek.filter((job) => job.status === 'Done')))}</dd><small>Interpretations sent</small></div>
+        <div><dt>Booked next week</dt><dd>{formatPounds(sum(nextWeek))}</dd><small>{nextWeek.length} job{nextWeek.length === 1 ? '' : 's'} so far</small></div>
+      </dl>
+      {thisWeek.length === 0 ? <p className="panel-intro">No paid work this week yet. Accept a recommended appointment to add some.</p> : (
+        <div className="table-scroll">
+          <table className="earnings-table">
+            <caption className="visually-hidden">This week’s jobs and pay</caption>
+            <thead><tr><th scope="col">When</th><th scope="col">Job</th><th scope="col">How it is priced</th><th scope="col">Status</th><th scope="col">You earn</th></tr></thead>
+            <tbody>
+              {thisWeek.map((job) => (
+                <tr key={job.id}>
+                  <td>{job.slot}</td>
+                  <td><strong>{job.kind}</strong><small>{job.detail}</small></td>
+                  <td>{job.fee.rule}</td>
+                  <td><span className={`pre-status pre-${job.status === 'Done' ? 'interpreted' : job.status === 'To do' ? 'awaiting-patient' : 'with-interpreter'}`}>{job.status}</span></td>
+                  <td className="money">{formatPounds(job.fee.perInterpreter)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot><tr><th scope="row" colSpan={4}>Expected this week</th><td className="money">{formatPounds(sum(thisWeek))}</td></tr></tfoot>
+          </table>
+        </div>
+      )}
+      <details className="rate-card">
+        <summary>Rates</summary>
+        <ul>
+          <li><strong>Video translation:</strong> {formatPounds(rates.videoPerMinute)} per started video minute, minimum {formatPounds(rates.videoMinimum)} for clips under {rates.videoMinimumMinutes} minutes. Subtitles (.SRT) add {formatPounds(rates.subtitlesPerMinute)} a minute.</li>
+          <li><strong>Live consultation, up to 1 hour:</strong> {formatPounds(rates.liveHourly)}, billed as a full hour even when shorter.</li>
+          <li><strong>Over 1 hour:</strong> {formatPounds(rates.extendedHourly)} an hour, shared by two interpreters to prevent fatigue and repetitive strain.</li>
+          <li><strong>Out of hours</strong> (weekends, 8 PM to 7 AM): live rates × {rates.outOfHoursMultiplier}.</li>
+        </ul>
+        <p className="retention-note"><ShieldCheck size={16} />Paid by the GP surgery or NHS trust that booked you, as the Equality Act 2010 requires. Patients are never charged.</p>
+      </details>
+    </section>
   )
 }

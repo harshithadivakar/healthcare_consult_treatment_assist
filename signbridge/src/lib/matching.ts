@@ -2,7 +2,7 @@
 import model from '../data/matchingModel.json'
 import { findDoctor, findPatient, interpreterProfiles } from '../data/demoDirectory'
 import type { InterpreterProfile, Mode } from '../data/demoDirectory'
-import type { PortalData } from '../data/portalStore'
+import type { Booking, PortalData } from '../data/portalStore'
 
 export type FeatureName = (typeof model.features)[number]['name']
 export type FeatureVector = Record<FeatureName, number>
@@ -52,7 +52,7 @@ export function predict(features: FeatureVector, specialty = '') {
 export function featuresFor(interpreter: InterpreterProfile, patientId: string, doctorId: string, data: PortalData): FeatureVector {
   const specialty = findDoctor(doctorId)?.specialty ?? 'Cardiology'
   const patient = findPatient(patientId)
-  const bookedThisWeek = data.bookings.filter((booking) => booking.interpreterId === interpreter.id).length
+  const bookedThisWeek = data.bookings.filter((booking) => booking.interpreterId === interpreter.id || booking.coInterpreterId === interpreter.id).length
   return {
     specialtyExperience: interpreter.specialtyExperience[specialty],
     similarPatientRating: interpreter.similarPatientRating[specialty],
@@ -65,7 +65,8 @@ export function featuresFor(interpreter: InterpreterProfile, patientId: string, 
 }
 
 export function isBusy(interpreterId: string, slot: string, data: PortalData, ignoreBookingId?: string) {
-  return data.bookings.some((booking) => booking.interpreterId === interpreterId && booking.slot === slot && booking.id !== ignoreBookingId)
+  return data.bookings.some((booking) =>
+    (booking.interpreterId === interpreterId || booking.coInterpreterId === interpreterId) && booking.slot === slot && booking.id !== ignoreBookingId)
 }
 
 /**
@@ -96,6 +97,13 @@ export function rankInterpreters(
   })
   const rank = (match: Match) => (match.available ? 0 : 2) + (match.penalised ? 1 : 0)
   return matches.sort((a, b) => rank(a) - rank(b) || b.score - a.score)
+}
+
+/** Over an hour, the platform adds the best other available interpreter as co-interpreter. */
+export function coInterpreterFor(data: PortalData, booking: Booking, leadId: string) {
+  if (booking.durationMinutes <= 60) return null
+  const ranked = rankInterpreters(data, { patientId: booking.patientId, doctorId: booking.doctorId, slot: booking.slot, mode: booking.mode, bookingId: booking.id })
+  return ranked.find((match) => match.available && !match.penalised && match.interpreter.id !== leadId)?.interpreter.id ?? null
 }
 
 export function availableInterpreterCount(data: PortalData, slot: string, mode?: Mode) {

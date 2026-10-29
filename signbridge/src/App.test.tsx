@@ -8,6 +8,7 @@ import { interpreterProfiles } from './data/demoDirectory'
 import { resetPortal, updatePortal } from './data/portalStore'
 import type { PortalData } from './data/portalStore'
 import { modelInfo, predict, rankInterpreters } from './lib/matching'
+import { liveFee, videoFee } from './lib/pricing'
 import type { FeatureVector } from './lib/matching'
 
 function renderConversationSupport() {
@@ -146,12 +147,59 @@ describe('interpreter matching model', () => {
     const eightDaysAgo = Date.now() - 8 * 24 * 60 * 60 * 1000
     updatePortal((data) => ({
       ...data,
-      bookings: [...data.bookings, { id: 'fresh', patientId: 'pat-alex', doctorId: 'doc-novak', slot: 'Tue 3 Nov 14:00', mode: 'Online', interpreterId: null, noShow: false, createdAt: Date.now() }],
+      bookings: [...data.bookings, { id: 'fresh', patientId: 'pat-alex', doctorId: 'doc-novak', slot: 'Tue 3 Nov 14:00', mode: 'Online', durationMinutes: 30, interpreterId: null, coInterpreterId: null, noShow: false, createdAt: Date.now() }],
       messages: [...data.messages, { ...data.messages[0], id: 'old', createdAt: eightDaysAgo }],
     }))
-    const saved = JSON.parse(window.localStorage.getItem('signbridge-demo-portal-v1')!) as PortalData
+    const saved = JSON.parse(window.localStorage.getItem('signbridge-demo-portal-v2')!) as PortalData
     expect(saved.bookings.some((booking) => booking.id === 'fresh')).toBe(true)
     expect(saved.messages.some((message) => message.id === 'old')).toBe(false)
+  })
+})
+
+describe('interpreter pricing and earnings', () => {
+  beforeEach(() => resetPortal())
+
+  it('applies the video translation minimum, per-minute rate and subtitle modifier', () => {
+    expect(videoFee(72).total).toBe(50)
+    expect(videoFee(380).total).toBe(70)
+    expect(videoFee(380, true).total).toBe(84)
+  })
+
+  it('bills a full hour, splits extended sessions between two interpreters and adds out-of-hours', () => {
+    expect(liveFee(30, 'Thu 29 Oct 09:30')).toMatchObject({ total: 60, perInterpreter: 60, interpreters: 1 })
+    expect(liveFee(90, 'Thu 29 Oct 09:30')).toMatchObject({ total: 180, perInterpreter: 90, interpreters: 2 })
+    expect(liveFee(30, 'Fri 30 Oct 20:30').total).toBe(90)
+  })
+
+  it('shows expected earnings this week and adds an accepted appointment', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^bsl interpreter view/i }))
+    const earnings = screen.getByRole('region', { name: /earnings/i })
+    // Amara: £60 + £90 out of hours live, £50 + £70 video translation.
+    expect(within(earnings).getAllByText('£270.00').length).toBeGreaterThan(0)
+    expect(within(earnings).getByText('£50.00', { selector: 'dd' })).toBeInTheDocument()
+    expect(within(earnings).getByText(/out of hours × 1\.5/i)).toBeInTheDocument()
+
+    const recommendations = screen.getByRole('region', { name: /new appointments recommended for you/i })
+    await user.click(within(recommendations).getAllByRole('button', { name: /^accept$/i })[0])
+    expect(within(screen.getByRole('region', { name: /earnings/i })).getAllByText('£330.00').length).toBeGreaterThan(0)
+  })
+
+  it('adds a co-interpreter automatically for appointments over an hour', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^bsl interpreter view/i }))
+    const recommendations = screen.getByRole('region', { name: /new appointments recommended for you/i })
+    const bisiCard = within(recommendations).getByText(/bisi okonjo/i).closest('article') as HTMLElement
+    expect(within(bisiCard).getByText(/you earn £90\.00/i)).toBeInTheDocument()
+    await user.click(within(bisiCard).getByRole('button', { name: /^accept$/i }))
+
+    await user.click(screen.getByRole('button', { name: /^doctor$/i }))
+    await user.selectOptions(screen.getByRole('combobox', { name: /viewing as doctor/i }), 'doc-shah')
+    const bisiRow = screen.getByRole('cell', { name: 'Bisi Okonjo' }).closest('[role="row"]') as HTMLElement
+    expect(within(bisiRow).getByText(/^Amara Okafor \+ .+/)).toBeInTheDocument()
+    expect(within(bisiRow).getByText('£180.00')).toBeInTheDocument()
   })
 })
 
