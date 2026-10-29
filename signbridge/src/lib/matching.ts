@@ -1,7 +1,7 @@
 // Ranks interpreters with the logistic regression trained in ml/train_matching_model.py.
 import model from '../data/matchingModel.json'
 import { findDoctor, findPatient, interpreterProfiles } from '../data/demoDirectory'
-import type { InterpreterProfile, Mode } from '../data/demoDirectory'
+import type { InterpreterProfile, Mode, Specialty } from '../data/demoDirectory'
 import type { Booking, PortalData } from '../data/portalStore'
 
 export type FeatureName = (typeof model.features)[number]['name']
@@ -49,8 +49,8 @@ export function predict(features: FeatureVector, specialty = '') {
   return { probability: 1 / (1 + Math.exp(-logit)), contributions }
 }
 
-export function featuresFor(interpreter: InterpreterProfile, patientId: string, doctorId: string, data: PortalData): FeatureVector {
-  const specialty = findDoctor(doctorId)?.specialty ?? 'Cardiology'
+export function featuresFor(interpreter: InterpreterProfile, patientId: string, doctorId: string, data: PortalData, treatmentArea?: Specialty): FeatureVector {
+  const specialty = treatmentArea ?? findDoctor(doctorId)?.specialty ?? 'Cardiology'
   const patient = findPatient(patientId)
   const bookedThisWeek = data.bookings.filter((booking) => booking.interpreterId === interpreter.id || booking.coInterpreterId === interpreter.id).length
   return {
@@ -64,6 +64,9 @@ export function featuresFor(interpreter: InterpreterProfile, patientId: string, 
   }
 }
 
+export const declaredAvailability = (data: PortalData, interpreter: InterpreterProfile) =>
+  data.availability[interpreter.id] ?? interpreter.availability
+
 export function isBusy(interpreterId: string, slot: string, data: PortalData, ignoreBookingId?: string) {
   return data.bookings.some((booking) =>
     (booking.interpreterId === interpreterId || booking.coInterpreterId === interpreterId) && booking.slot === slot && booking.id !== ignoreBookingId)
@@ -76,13 +79,13 @@ export function isBusy(interpreterId: string, slot: string, data: PortalData, ig
  */
 export function rankInterpreters(
   data: PortalData,
-  context: { patientId: string; doctorId: string; slot?: string; mode?: Mode; bookingId?: string },
+  context: { patientId: string; doctorId: string; slot?: string; mode?: Mode; bookingId?: string; treatmentArea?: Specialty },
 ): Match[] {
   const matches = interpreterProfiles.map((interpreter) => {
-    const features = featuresFor(interpreter, context.patientId, context.doctorId, data)
-    const { probability, contributions } = predict(features, findDoctor(context.doctorId)?.specialty ?? '')
+    const features = featuresFor(interpreter, context.patientId, context.doctorId, data, context.treatmentArea)
+    const { probability, contributions } = predict(features, context.treatmentArea ?? findDoctor(context.doctorId)?.specialty ?? '')
     const available = !context.slot || (
-      interpreter.availability.includes(context.slot)
+      declaredAvailability(data, interpreter).includes(context.slot)
       && (!context.mode || interpreter.modes.includes(context.mode))
       && !isBusy(interpreter.id, context.slot, data, context.bookingId)
     )
@@ -110,13 +113,13 @@ export function translationShortlist(data: PortalData, patientId: string, doctor
 /** Over an hour, the platform adds the best other available interpreter as co-interpreter. */
 export function coInterpreterFor(data: PortalData, booking: Booking, leadId: string) {
   if (booking.durationMinutes <= 60) return null
-  const ranked = rankInterpreters(data, { patientId: booking.patientId, doctorId: booking.doctorId, slot: booking.slot, mode: booking.mode, bookingId: booking.id })
+  const ranked = rankInterpreters(data, { patientId: booking.patientId, doctorId: booking.doctorId, slot: booking.slot, mode: booking.mode, bookingId: booking.id, treatmentArea: booking.treatmentArea })
   return ranked.find((match) => match.available && !match.penalised && match.interpreter.id !== leadId)?.interpreter.id ?? null
 }
 
 export function availableInterpreterCount(data: PortalData, slot: string, mode?: Mode) {
   return interpreterProfiles.filter((interpreter) =>
-    interpreter.availability.includes(slot)
+    declaredAvailability(data, interpreter).includes(slot)
     && (!mode || interpreter.modes.includes(mode))
     && !isBusy(interpreter.id, slot, data),
   ).length

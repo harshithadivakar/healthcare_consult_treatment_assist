@@ -713,6 +713,30 @@ button.flow-lane-label:hover { border-color: var(--role); }
 .rate-card ul { margin: .4rem 0; padding-left: 1.2rem; }
 .rate-card li { margin-bottom: .35rem; line-height: 1.45; }
 
+.availability-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .5rem; }
+.availability-day { display: grid; align-content: start; gap: .4rem; padding: .5rem; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface-soft); }
+.availability-day h3 { margin: 0 0 .2rem; font-size: .95rem; }
+.availability-day > small { color: var(--muted); }
+.availability-slot { display: flex; justify-content: space-between; align-items: center; gap: .4rem; min-height: 44px; padding: .4rem .6rem; border: 2px dashed var(--border); border-radius: 8px; background: var(--surface); color: var(--muted); }
+.availability-slot small { font-size: .74rem; font-weight: 700; }
+.availability-slot[aria-pressed="true"] { border: 2px solid var(--interpreter); background: var(--interpreter-soft); color: var(--ink); }
+.availability-slot.booked { border-color: var(--accent); background: var(--accent-soft); opacity: 1; }
+.recommend-preview { margin: 0 0 1rem; padding: .9rem 1rem; border: 1px solid var(--border); border-left: 5px solid var(--success); border-radius: 0 var(--radius-control) var(--radius-control) 0; background: var(--success-soft); }
+.recommend-preview h3 { margin: 0 0 .2rem; font-size: 1rem; }
+.recommend-preview .panel-intro { margin-bottom: .5rem; }
+.recommend-preview ol { margin: 0 0 .4rem; padding-left: 1.3rem; }
+.recommend-preview li { margin-bottom: .2rem; }
+.recommend-preview small { color: var(--muted); }
+.recommend-preview legend { font-weight: 800; padding: 0 .3rem; }
+.interpreter-picks { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.interpreter-picks label { display: flex; align-items: center; gap: .6rem; padding: .55rem .7rem; border: 2px solid var(--border); border-radius: var(--radius-control); background: var(--surface); cursor: pointer; }
+.interpreter-picks label.selected { border-color: var(--success); box-shadow: inset 0 0 0 1px var(--success); }
+.interpreter-picks input { accent-color: var(--success); width: 18px; height: 18px; flex: 0 0 auto; }
+.interpreter-picks label > span { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .5rem; }
+.interpreter-picks small { flex-basis: 100%; color: var(--muted); }
+.kind-recommended { background: var(--success); color: var(--surface); }
+.requirements-line { display: flex; align-items: flex-start; flex-wrap: wrap; gap: .35rem; margin: 0 0 1rem; padding: .6rem .8rem; border-radius: var(--radius-control); background: var(--surface-soft); }
+.requirements-line svg { color: var(--success); margin-top: .15rem; }
 .answer-chain { list-style: none; margin: .4rem 0 0; padding: .55rem .7rem; display: grid; gap: .3rem; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); font-size: .84rem; }
 .answer-chain li { display: flex; align-items: flex-start; gap: .4rem; line-height: 1.35; }
 .answer-chain svg { flex: 0 0 auto; margin-top: .1rem; }
@@ -764,6 +788,7 @@ h2 .tab-badge { font-size: .75rem; margin-left: .3rem; }
   .flow-cell:not(.role-safeguard):not(:has(.flow-step)) { display: none; }
   .flow-cell-role { display: grid; place-items: center; position: absolute; left: .5rem; top: .5rem; width: 40px; height: 40px; border: 2px solid var(--role); border-radius: 50%; background: var(--role-soft); color: var(--role); }
   .week-calendar { grid-template-columns: 1fr; }
+  .availability-grid { grid-template-columns: 1fr 1fr; }
   .calendar-day { min-height: 0; }
   .portal-columns { grid-template-columns: 1fr; }
   .messenger { grid-template-columns: 1fr; }

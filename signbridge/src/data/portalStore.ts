@@ -3,7 +3,8 @@
 // shows in the others (and in other tabs), and anything older than 7 days is deleted.
 import { useSyncExternalStore } from 'react'
 import type { Role } from './careJourney'
-import type { Mode } from './demoDirectory'
+import { interpreterProfiles } from './demoDirectory'
+import type { Mode, Specialty } from './demoDirectory'
 
 export type Phase = 'Pre-consultation' | 'Post-consultation'
 
@@ -20,6 +21,8 @@ export interface Booking {
   slot: string
   mode: Mode
   durationMinutes: number
+  // The treatment area the patient asked for help with; interpreters are matched on it.
+  treatmentArea?: Specialty
   interpreterId: string | null
   coInterpreterId: string | null
   // Chosen outside their declared availability, so the interpreter has to confirm.
@@ -66,6 +69,8 @@ export interface PortalData {
   reportedNoShows: Record<string, number>
   // When each person last read each conversation, keyed `${readerId}|${otherId}`.
   readAt: Record<string, number>
+  // Times each interpreter has told SignBridge they are free, keyed by interpreter id.
+  availability: Record<string, string[]>
 }
 
 export const retentionDays = 7
@@ -73,6 +78,8 @@ const retentionMs = retentionDays * 24 * 60 * 60 * 1000
 const storageKey = 'signbridge-demo-portal-v3'
 
 export const newId = () => crypto.randomUUID()
+
+const declaredDefaults = () => Object.fromEntries(interpreterProfiles.map((interpreter) => [interpreter.id, interpreter.availability]))
 
 function seed(): PortalData {
   const now = Date.now()
@@ -141,6 +148,7 @@ function seed(): PortalData {
     ],
     reportedNoShows: {},
     readAt: {},
+    availability: declaredDefaults(),
   }
 }
 
@@ -155,7 +163,7 @@ function load(): PortalData {
     const saved = window.localStorage.getItem(storageKey)
     if (saved) {
       const parsed = JSON.parse(saved) as PortalData
-      if (parsed.version === 3) return purgeExpired({ ...parsed, readAt: parsed.readAt ?? {} })
+      if (parsed.version === 3) return purgeExpired({ ...parsed, readAt: parsed.readAt ?? {}, availability: parsed.availability ?? declaredDefaults() })
     }
   } catch {
     // Storage blocked or corrupt: fall back to the seed data in memory.

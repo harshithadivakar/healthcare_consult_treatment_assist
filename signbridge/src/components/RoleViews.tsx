@@ -27,6 +27,7 @@ import { useEffect, useState } from 'react'
 import { consultationNotes, roleLabels } from '../data/careJourney'
 import type { Role } from '../data/careJourney'
 import {
+  allSlots,
   currentWeekDays,
   demoDays,
   demoPatientId,
@@ -35,6 +36,7 @@ import {
   findInterpreter,
   findPatient,
   interpreterProfiles,
+  patientNeeds,
   slotKey,
   slotOrder,
   splitSlot,
@@ -42,7 +44,7 @@ import {
 import type { Mode } from '../data/demoDirectory'
 import { daysUntilDeleted, markRead, newId, resetPortal, unreadCount, updatePortal, usePortal } from '../data/portalStore'
 import type { Booking, InterpretationTask, Party, Phase, PortalData, PortalMessage } from '../data/portalStore'
-import { availableInterpreterCount, coInterpreterFor, modelInfo, rankInterpreters, translationShortlist } from '../lib/matching'
+import { availableInterpreterCount, coInterpreterFor, declaredAvailability, modelInfo, rankInterpreters, translationShortlist } from '../lib/matching'
 import { formatPounds, liveFee, rates, videoFee } from '../lib/pricing'
 import type { Fee } from '../lib/pricing'
 import type { Match } from '../lib/matching'
@@ -405,26 +407,45 @@ function PatientBooking({ data, myBookings, onChoose }: { data: PortalData; myBo
   const [slot, setSlot] = useState<string | null>(null)
   const [mode, setMode] = useState<Mode>('Online')
   const [duration, setDuration] = useState(30)
+  const [needId, setNeedId] = useState(patientNeeds[0].id)
+  const need = patientNeeds.find((item) => item.id === needId) ?? patientNeeds[0]
+  const [chosenId, setChosenId] = useState<string | null>(null)
   const [confirmation, setConfirmation] = useState('')
   const doctor = findDoctor(doctorId) ?? doctors[0]
+  const matches = slot ? rankInterpreters(data, { patientId: demoPatientId, doctorId, slot, mode, treatmentArea: need.specialty }) : []
+  const recommended = matches.filter((match) => match.available && !match.penalised).slice(0, 3).map((match) => match.interpreter.id)
+  // The best recommended interpreter is chosen unless the patient picks someone else.
+  const chosen = matches.find((match) => match.interpreter.id === chosenId) ?? matches.find((match) => match.interpreter.id === recommended[0])
+  const pickSlot = (value: string | null) => { setSlot(value); setChosenId(null) }
 
   const book = () => {
-    if (!slot) return
-    const booking: Booking = { id: newId(), patientId: demoPatientId, doctorId, slot, mode, durationMinutes: duration, interpreterId: null, coInterpreterId: null, pendingConfirmation: false, noShow: false, createdAt: Date.now() }
-    updatePortal((current) => ({ ...current, bookings: [...current.bookings, booking] }))
-    setConfirmation(`Booked with ${doctor.name} on ${slot}, ${mode.toLowerCase()}, ${durationLabel(duration)}. It is now on ${doctor.name}’s schedule.`)
-    setSlot(null)
+    if (!slot || !chosen) return
+    const draft: Booking = {
+      id: newId(), patientId: demoPatientId, doctorId, slot, mode, durationMinutes: duration, treatmentArea: need.specialty,
+      interpreterId: chosen.interpreter.id, coInterpreterId: null, pendingConfirmation: !chosen.available, noShow: false, createdAt: Date.now(),
+    }
+    updatePortal((current) => ({ ...current, bookings: [...current.bookings, { ...draft, coInterpreterId: coInterpreterFor(current, draft, chosen.interpreter.id) }] }))
+    setConfirmation(`Booked with ${doctor.name} on ${slot}, ${mode.toLowerCase()}, ${durationLabel(duration)}, with ${chosen.interpreter.name}${chosen.available ? '' : ' (waiting for them to confirm)'}.`)
+    pickSlot(null)
   }
 
   return (
     <div className="portal-panel" role="tabpanel">
       <h2>Book an appointment</h2>
-      <p className="panel-intro">Only times when the doctor has an appointment <strong>and</strong> a BSL interpreter is free can be booked.</p>
+      <fieldset className="doctor-choice">
+        <legend>What do you need help with?</legend>
+        {patientNeeds.map((item) => (
+          <label key={item.id}>
+            <input type="radio" name="need" checked={needId === item.id} onChange={() => { setNeedId(item.id); setChosenId(null) }} />
+            <span><strong>{item.label}</strong><small>{item.specialty}</small></span>
+          </label>
+        ))}
+      </fieldset>
       <fieldset className="doctor-choice">
         <legend>Doctor</legend>
         {doctors.map((item) => (
           <label key={item.id}>
-            <input type="radio" name="doctor" checked={doctorId === item.id} onChange={() => { setDoctorId(item.id); setSlot(null) }} />
+            <input type="radio" name="doctor" checked={doctorId === item.id} onChange={() => { setDoctorId(item.id); pickSlot(null) }} />
             <span><strong>{item.name}</strong><small>{item.specialty} · {item.practice}</small></span>
           </label>
         ))}
@@ -433,7 +454,7 @@ function PatientBooking({ data, myBookings, onChoose }: { data: PortalData; myBo
         <legend>How would you like the interpreter to join?</legend>
         {(['Online', 'In person'] as const).map((item) => (
           <label key={item}>
-            <input type="radio" name="mode" checked={mode === item} onChange={() => { setMode(item); setSlot(null) }} />
+            <input type="radio" name="mode" checked={mode === item} onChange={() => { setMode(item); pickSlot(null) }} />
             {item === 'Online' ? <VideoCamera size={20} /> : <MapPin size={20} />}{item === 'Online' ? 'Online video call' : 'In person at the surgery'}
           </label>
         ))}
@@ -442,7 +463,7 @@ function PatientBooking({ data, myBookings, onChoose }: { data: PortalData; myBo
         <legend>How long do you need?</legend>
         {[30, 60, 90].map((minutes) => (
           <label key={minutes}>
-            <input type="radio" name="duration" checked={duration === minutes} onChange={() => { setDuration(minutes); setSlot(null) }} />
+            <input type="radio" name="duration" checked={duration === minutes} onChange={() => { setDuration(minutes); pickSlot(null) }} />
             {durationLabel(minutes)}{minutes > 60 ? ' (2 interpreters needed)' : ''}
           </label>
         ))}
@@ -454,7 +475,7 @@ function PatientBooking({ data, myBookings, onChoose }: { data: PortalData; myBo
           const needed = duration > 60 ? 2 : 1
           const { day, time } = splitSlot(item)
           return (
-            <button className="slot-button" aria-pressed={slot === item} disabled={taken || free < needed} onClick={() => setSlot(item)} key={item}>
+            <button className="slot-button" aria-pressed={slot === item} disabled={taken || free < needed} onClick={() => pickSlot(item)} key={item}>
               <strong>{day}</strong>
               <span><Clock size={16} />{time}</span>
               <small>{taken ? 'Already booked' : free === 0 ? 'No interpreter free' : free < needed ? `Needs 2 interpreters, ${free} free` : `${free} interpreter${free > 1 ? 's' : ''} free`}</small>
@@ -462,7 +483,27 @@ function PatientBooking({ data, myBookings, onChoose }: { data: PortalData; myBo
           )
         })}
       </div>
-      <button className="primary-button" disabled={!slot} onClick={book}><CalendarCheck size={20} />Book appointment</button>
+      {slot && chosen && (
+        <fieldset className="recommend-preview">
+          <legend>Choose your interpreter</legend>
+          <p className="panel-intro">Recommended from your requirements: {need.label} · {mode} · {durationLabel(duration)}. You can pick anyone.</p>
+          <ul className="interpreter-picks">
+            {matches.map((match) => (
+              <li key={match.interpreter.id}>
+                <label className={chosen.interpreter.id === match.interpreter.id ? 'selected' : ''}>
+                  <input type="radio" name="interpreter" checked={chosen.interpreter.id === match.interpreter.id} onChange={() => setChosenId(match.interpreter.id)} />
+                  <span>
+                    <strong>{match.interpreter.name}</strong>
+                    {recommended.includes(match.interpreter.id) && <span className="kind-chip kind-recommended">Recommended</span>}
+                    <small>{match.score}% match · {match.reasons.filter((reason) => reason.impact > 0)[0]?.label ?? match.interpreter.region + ' BSL'}{match.available ? '' : ' · Not on their declared availability, they will be asked to confirm'}</small>
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </fieldset>
+      )}
+      <button className="primary-button" disabled={!slot || !chosen} onClick={book}><CalendarCheck size={20} />Book appointment{chosen && slot ? ` with ${chosen.interpreter.name.split(' ')[0]}` : ''}</button>
       {confirmation && <p className="portal-success" role="status"><CheckCircle size={20} weight="fill" />{confirmation}</p>}
 
       <h3 className="subsection-title">Your appointments</h3>
@@ -496,7 +537,8 @@ function PatientInterpreterChoice({ data, myBookings, bookingId, onSelectBooking
   if (!booking) {
     return <div className="portal-panel" role="tabpanel"><h2>Choose an interpreter</h2><p className="panel-intro">Book an appointment first.</p></div>
   }
-  const matches = rankInterpreters(data, { patientId: booking.patientId, doctorId: booking.doctorId, slot: booking.slot, mode: booking.mode, bookingId: booking.id })
+  const matches = rankInterpreters(data, { patientId: booking.patientId, doctorId: booking.doctorId, slot: booking.slot, mode: booking.mode, bookingId: booking.id, treatmentArea: booking.treatmentArea })
+  const need = patientNeeds.find((item) => item.specialty === (booking.treatmentArea ?? findDoctor(booking.doctorId)?.specialty))
 
   const choose = (match: Match) => updatePortal((current) => ({
     ...current,
@@ -528,7 +570,8 @@ function PatientInterpreterChoice({ data, myBookings, bookingId, onSelectBooking
           ))}
         </div>
       )}
-      <p className="panel-intro">For <strong>{booking.slot}</strong> with {doctorName(booking.doctorId)} ({findDoctor(booking.doctorId)?.specialty}), {booking.mode.toLowerCase()}, {durationLabel(booking.durationMinutes)}.</p>
+      <p className="panel-intro">For <strong>{booking.slot}</strong> with {doctorName(booking.doctorId)}, {booking.mode.toLowerCase()}, {durationLabel(booking.durationMinutes)}.</p>
+      <p className="requirements-line"><ListChecks size={18} />Based on your requirements: <strong>{need?.label ?? findDoctor(booking.doctorId)?.specialty}</strong> · {booking.mode} · {durationLabel(booking.durationMinutes)}, and the times interpreters have reported as free.</p>
       {booking.durationMinutes > 60 && (
         <p className="two-interpreter-note"><WarningOctagon size={20} weight="fill" /><span><strong>This appointment needs 2 interpreters.</strong> It is over an hour, so two interpreters take turns to avoid fatigue. Choose the lead interpreter and the platform adds the best available co-interpreter.{booking.coInterpreterId ? ` Co-interpreter: ${findInterpreter(booking.coInterpreterId)?.name}.` : booking.interpreterId ? ' No second interpreter is free yet.' : ''}</span></p>
       )}
@@ -771,6 +814,8 @@ function InterpreterView({ data }: { data: PortalData }) {
         </div>
       </section>
 
+      <AvailabilityEditor data={data} interpreterId={me.id} />
+
       <section className="portal-panel" aria-labelledby="inbox-title">
         <h2 id="inbox-title"><Tray size={24} />Interpretations to do</h2>
         {myTasks.filter((task) => task.status === 'awaiting').length === 0 && <p className="panel-intro">Nothing waiting. New answers from patients appear here.</p>}
@@ -854,6 +899,56 @@ function InterpreterView({ data }: { data: PortalData }) {
 
       <InterpreterEarnings data={data} interpreterId={me.id} />
     </div>
+  )
+}
+
+function AvailabilityEditor({ data, interpreterId }: { data: PortalData; interpreterId: string }) {
+  const interpreter = findInterpreter(interpreterId) ?? interpreterProfiles[0]
+  const declared = declaredAvailability(data, interpreter)
+  const booked = new Set(data.bookings
+    .filter((booking) => (booking.interpreterId === interpreterId || booking.coInterpreterId === interpreterId) && !booking.noShow)
+    .map((booking) => booking.slot))
+
+  const toggle = (slot: string) => updatePortal((current) => {
+    const list = declaredAvailability(current, interpreter)
+    return {
+      ...current,
+      availability: { ...current.availability, [interpreterId]: list.includes(slot) ? list.filter((item) => item !== slot) : [...list, slot] },
+    }
+  })
+
+  return (
+    <section className="portal-panel" aria-labelledby="availability-title">
+      <h2 id="availability-title"><CalendarCheck size={24} />Your availability</h2>
+      <p className="panel-intro">Tell SignBridge when you can interpret ({interpreter.modes.join(' or ').toLowerCase()}). Patients are recommended you, and can book you, only at these times.</p>
+      <div className="availability-grid">
+        {demoDays.filter((day) => allSlots.some((slot) => splitSlot(slot).day === day)).map((day) => {
+          const slots = allSlots.filter((slot) => splitSlot(slot).day === day)
+          return (
+            <div className="availability-day" key={day}>
+              <h3>{day}</h3>
+              {slots.map((slot) => {
+                const isBooked = booked.has(slot)
+                const on = isBooked || declared.includes(slot)
+                const state = isBooked ? 'Booked' : on ? 'Available' : 'Not available'
+                return (
+                  <button
+                    className={`availability-slot${isBooked ? ' booked' : ''}`}
+                    aria-pressed={on}
+                    aria-label={`${slot}: ${state}`}
+                    disabled={isBooked}
+                    onClick={() => toggle(slot)}
+                    key={slot}
+                  >
+                    <strong>{splitSlot(slot).time}</strong><small>{state}</small>
+                  </button>
+                )
+              })}
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
