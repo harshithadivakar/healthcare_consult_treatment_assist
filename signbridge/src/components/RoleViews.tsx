@@ -41,8 +41,8 @@ import {
 } from '../data/demoDirectory'
 import type { Mode } from '../data/demoDirectory'
 import { daysUntilDeleted, markRead, newId, resetPortal, unreadCount, updatePortal, usePortal } from '../data/portalStore'
-import type { Booking, InterpretationTask, Party, PortalData, PortalMessage } from '../data/portalStore'
-import { availableInterpreterCount, coInterpreterFor, modelInfo, rankInterpreters } from '../lib/matching'
+import type { Booking, InterpretationTask, Party, Phase, PortalData, PortalMessage } from '../data/portalStore'
+import { availableInterpreterCount, coInterpreterFor, modelInfo, rankInterpreters, translationShortlist } from '../lib/matching'
 import { formatPounds, liveFee, rates, videoFee } from '../lib/pricing'
 import type { Fee } from '../lib/pricing'
 import type { Match } from '../lib/matching'
@@ -179,13 +179,13 @@ function MessageCenter({ me, contacts, data, allowQuestionnaire = false }: {
   const conversations = [...people.values()].filter((person) => lastActivity(person.id) > 0).sort((a, b) => lastActivity(b.id) - lastActivity(a.id))
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [kind, setKind] = useState<'message' | 'questionnaire'>('message')
+  const [kind, setKind] = useState<'message' | Phase>('message')
   const [body, setBody] = useState('')
   const selected = (selectedId && people.get(selectedId)) || conversations[0] || contacts[0]
   const thread = selected ? mine.filter((message) => partnerOf(message, me.id).id === selected.id).sort((a, b) => a.createdAt - b.createdAt) : []
   const unreadHere = selected ? unreadCount(data, me.id, selected.id) : 0
   const canAsk = allowQuestionnaire && selected?.role === 'patient'
-  const asking = canAsk && kind === 'questionnaire'
+  const asking = canAsk && kind !== 'message'
 
   useEffect(() => {
     if (selected && unreadHere > 0) markRead(me.id, selected.id)
@@ -199,9 +199,10 @@ function MessageCenter({ me, contacts, data, allowQuestionnaire = false }: {
       from: me,
       to: selected,
       kind: asking ? 'questionnaire' : 'message',
-      subject: asking ? 'Questions before your appointment' : `Message from ${me.name}`,
+      subject: !asking ? `Message from ${me.name}` : kind === 'Pre-consultation' ? 'Questions before your appointment' : 'Follow-up after your appointment',
       body: asking ? 'Please answer these questions in BSL or text.' : body.trim(),
       questions: asking ? lines : undefined,
+      phase: asking ? kind as Phase : undefined,
       createdAt: Date.now(),
     }
     updatePortal((current) => ({ ...current, messages: [...current.messages, message], readAt: { ...current.readAt, [`${me.id}|${selected.id}`]: Date.now() } }))
@@ -250,11 +251,14 @@ function MessageCenter({ me, contacts, data, allowQuestionnaire = false }: {
                 return (
                   <li className={`bubble ${outgoing ? 'bubble-out' : 'bubble-in'}`} key={message.id}>
                     {message.kind !== 'message' && (
-                      <span className={`kind-chip kind-${message.kind}`}>{message.kind === 'interpretation' ? 'Interpretation' : 'Questionnaire'}</span>
+                      <span className={`kind-chip kind-${message.kind}`}>
+                        {message.kind === 'interpretation' ? 'Interpretation' : message.kind === 'answers' ? 'Typed answers' : message.phase ?? 'Questionnaire'}
+                      </span>
                     )}
                     {message.kind !== 'message' && <strong>{message.subject}</strong>}
-                    <p>{message.body}</p>
+                    {message.kind === 'answers' ? <TypedAnswers data={data} message={message} /> : <p>{message.body}</p>}
                     {message.questions && <ol className="question-list">{message.questions.map((question) => <li key={question}>{question}</li>)}</ol>}
+                    {message.kind === 'questionnaire' && <AnswerChain data={data} questionnaire={message} />}
                     <small>{outgoing ? 'You' : message.from.name} · {timeAgo(message.createdAt)} · deleted in {daysUntilDeleted(message.createdAt)} days</small>
                   </li>
                 )
@@ -265,7 +269,8 @@ function MessageCenter({ me, contacts, data, allowQuestionnaire = false }: {
                 <label className="composer-kind"><span>Type</span>
                   <select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}>
                     <option value="message">Message</option>
-                    <option value="questionnaire">Questionnaire</option>
+                    <option value="Pre-consultation">Pre-consultation questionnaire</option>
+                    <option value="Post-consultation">Post-consultation follow-up</option>
                   </select>
                 </label>
               )}
@@ -281,7 +286,7 @@ function MessageCenter({ me, contacts, data, allowQuestionnaire = false }: {
                 />
               </label>
               <div className="composer-row">
-                <small>{asking ? 'The patient answers in BSL or text, and a matched interpreter returns it to you.' : 'Enter to send · Shift + Enter for a new line'}</small>
+                <small>{asking ? 'Typed answers come straight to you. Recorded BSL answers go to an interpreter for translation first.' : 'Enter to send · Shift + Enter for a new line'}</small>
                 <button type="submit" className="primary-button" disabled={!body.trim()}><PaperPlaneTilt size={20} />Send</button>
               </div>
             </form>
@@ -289,6 +294,49 @@ function MessageCenter({ me, contacts, data, allowQuestionnaire = false }: {
         )}
       </section>
     </div>
+  )
+}
+
+function TypedAnswers({ data, message }: { data: PortalData; message: PortalMessage }) {
+  const questions = data.messages.find((item) => item.id === message.questionnaireId)?.questions ?? []
+  return (
+    <dl className="answer-list">
+      {(message.answers ?? []).map((answer, index) => <div key={index}><dt>{questions[index] ?? `Answer ${index + 1}`}</dt><dd>{answer}</dd></div>)}
+    </dl>
+  )
+}
+
+/** Where a questionnaire's answers are, so the doctor and patient can both follow the chain. */
+function AnswerChain({ data, questionnaire }: { data: PortalData; questionnaire: PortalMessage }) {
+  const patient = questionnaire.to.name
+  const doctor = questionnaire.from.name
+  const typed = data.messages.find((message) => message.kind === 'answers' && message.questionnaireId === questionnaire.id)
+  const task = data.tasks.find((item) => item.questionnaireId === questionnaire.id)
+  const steps: Array<{ done: boolean; text: string }> = [{ done: true, text: `${doctor} sent the questions` }]
+  if (typed) {
+    steps.push({ done: true, text: `${patient} typed the answers and sent them straight to ${doctor}` })
+  } else if (task) {
+    steps.push({ done: true, text: `${patient} recorded the answers in BSL (${Math.floor(task.videoSeconds / 60)} min ${task.videoSeconds % 60} s)` })
+    if (task.status === 'open') {
+      const waiting = task.offeredTo.filter((id) => !task.declinedBy.includes(id)).length
+      steps.push({ done: false, text: `Offered to ${waiting} interpreter${waiting === 1 ? '' : 's'} for translation. Waiting for one to accept` })
+    } else {
+      steps.push({ done: true, text: `${findInterpreter(task.interpreterId)?.name} accepted the translation` })
+    }
+    steps.push(task.status === 'sent'
+      ? { done: true, text: `English translation sent to ${doctor}` }
+      : { done: false, text: `Translation due to ${doctor} by ${task.due}` })
+  } else {
+    steps.push({ done: false, text: `Waiting for ${patient} to answer` })
+  }
+  return (
+    <ol className="answer-chain" aria-label="Answer progress">
+      {steps.map((step) => (
+        <li className={step.done ? 'chain-done' : 'chain-waiting'} key={step.text}>
+          {step.done ? <CheckCircle size={16} weight="fill" /> : <Clock size={16} />}{step.text}
+        </li>
+      ))}
+    </ol>
   )
 }
 
@@ -300,7 +348,9 @@ function PatientView({ data, onStartConversation }: { data: PortalData; onStartC
   const [bookingId, setBookingId] = useState<string | null>(null)
   const myBookings = data.bookings.filter((booking) => booking.patientId === me.id).sort(bySlot)
   const openQuestionnaires = data.messages.filter((message) =>
-    message.kind === 'questionnaire' && message.to.id === me.id && !data.tasks.some((task) => task.questionnaireId === message.id))
+    message.kind === 'questionnaire' && message.to.id === me.id
+    && !data.tasks.some((task) => task.questionnaireId === message.id)
+    && !data.messages.some((answer) => answer.kind === 'answers' && answer.questionnaireId === message.id))
 
   const chooseFor = (id: string) => { setBookingId(id); setTab('interpreter') }
 
@@ -335,7 +385,6 @@ function PatientView({ data, onStartConversation }: { data: PortalData; onStartC
         <div className="portal-panel" role="tabpanel">
           <h2>Messages</h2>
           {openQuestionnaires.map((questionnaire) => <QuestionnaireAnswer data={data} questionnaire={questionnaire} key={questionnaire.id} />)}
-          <SentAnswers data={data} />
           <MessageCenter
             me={me}
             data={data}
@@ -361,7 +410,7 @@ function PatientBooking({ data, myBookings, onChoose }: { data: PortalData; myBo
 
   const book = () => {
     if (!slot) return
-    const booking: Booking = { id: newId(), patientId: demoPatientId, doctorId, slot, mode, durationMinutes: duration, interpreterId: null, coInterpreterId: null, noShow: false, createdAt: Date.now() }
+    const booking: Booking = { id: newId(), patientId: demoPatientId, doctorId, slot, mode, durationMinutes: duration, interpreterId: null, coInterpreterId: null, pendingConfirmation: false, noShow: false, createdAt: Date.now() }
     updatePortal((current) => ({ ...current, bookings: [...current.bookings, booking] }))
     setConfirmation(`Booked with ${doctor.name} on ${slot}, ${mode.toLowerCase()}, ${durationLabel(duration)}. It is now on ${doctor.name}’s schedule.`)
     setSlot(null)
@@ -425,6 +474,7 @@ function PatientBooking({ data, myBookings, onChoose }: { data: PortalData; myBo
             <li key={booking.id}>
               <span className="booking-when"><strong>{booking.slot}</strong><small>{doctorName(booking.doctorId)} · {booking.mode} · {durationLabel(booking.durationMinutes)}</small></span>
               {booking.noShow ? <span className="pre-status pre-awaiting-patient">Interpreter no-show reported</span>
+                : interpreter && booking.pendingConfirmation ? <span className="pre-status pre-awaiting-patient">Waiting for {interpreter.name} to confirm</span>
                 : interpreter ? <span className="pre-status pre-interpreted">Interpreter: {interpreterNames(booking)}</span>
                   : <button className="secondary-button small-button" onClick={() => onChoose(booking.id)}>Choose an interpreter</button>}
             </li>
@@ -448,10 +498,10 @@ function PatientInterpreterChoice({ data, myBookings, bookingId, onSelectBooking
   }
   const matches = rankInterpreters(data, { patientId: booking.patientId, doctorId: booking.doctorId, slot: booking.slot, mode: booking.mode, bookingId: booking.id })
 
-  const choose = (interpreterId: string) => updatePortal((current) => ({
+  const choose = (match: Match) => updatePortal((current) => ({
     ...current,
     bookings: current.bookings.map((item) => item.id === booking.id
-      ? { ...item, interpreterId, coInterpreterId: coInterpreterFor(current, item, interpreterId) }
+      ? { ...item, interpreterId: match.interpreter.id, coInterpreterId: coInterpreterFor(current, item, match.interpreter.id), pendingConfirmation: !match.available }
       : item),
   }))
 
@@ -498,11 +548,12 @@ function PatientInterpreterChoice({ data, myBookings, bookingId, onSelectBooking
                 <ReasonChips match={match} />
                 {match.penalised && <small className="flag-text"><WarningOctagon size={15} weight="fill" />Last priority: missed an appointment</small>}
                 {!match.available && !chosen && !isCo && <small className="availability-note">Not on their declared availability for this time or mode. Choosing them sends a request to confirm.</small>}
+                {chosen && booking.pendingConfirmation && <small className="availability-note">Request sent. Waiting for {match.interpreter.name.split(' ')[0]} to confirm.</small>}
               </div>
               <button
                 className={chosen ? 'primary-button small-button' : 'secondary-button small-button'}
                 disabled={isCo}
-                onClick={() => choose(match.interpreter.id)}
+                onClick={() => choose(match)}
               >
                 {chosen ? <><CheckCircle size={18} weight="fill" />{booking.durationMinutes > 60 ? 'Lead' : 'Chosen'}</> : isCo ? <><CheckCircle size={18} weight="fill" />Co-interpreter</> : `Choose ${match.interpreter.name.split(' ')[0]}`}
               </button>
@@ -526,6 +577,7 @@ function PatientInterpreterChoice({ data, myBookings, bookingId, onSelectBooking
 
 function QuestionnaireAnswer({ data, questionnaire }: { data: PortalData; questionnaire: PortalMessage }) {
   const questions = questionnaire.questions ?? []
+  const doctor = questionnaire.from.name
   const [answerMode, setAnswerMode] = useState<'record' | 'type'>('record')
   const [recording, setRecording] = useState<'idle' | 'recording' | 'saved'>('idle')
   const [answers, setAnswers] = useState(questions.map(() => ''))
@@ -533,20 +585,36 @@ function QuestionnaireAnswer({ data, questionnaire }: { data: PortalData; questi
 
   const send = () => {
     const doctorId = questionnaire.from.id
-    const [best] = rankInterpreters(data, { patientId: demoPatientId, doctorId }).filter((match) => !match.penalised)
+    const phase = questionnaire.phase ?? 'Pre-consultation'
+    if (answerMode === 'type') {
+      const message: PortalMessage = {
+        id: newId(),
+        from: questionnaire.to,
+        to: questionnaire.from,
+        kind: 'answers',
+        subject: `Answers: ${questionnaire.subject}`,
+        body: 'Typed answers to your questionnaire.',
+        answers,
+        phase,
+        questionnaireId: questionnaire.id,
+        createdAt: Date.now(),
+      }
+      updatePortal((current) => ({ ...current, messages: [...current.messages, message] }))
+      return
+    }
     const appointment = data.bookings.filter((booking) => booking.patientId === demoPatientId && booking.doctorId === doctorId).sort(bySlot)[0]
     const task: InterpretationTask = {
       id: newId(),
       questionnaireId: questionnaire.id,
       patientId: demoPatientId,
       doctorId,
-      interpreterId: best.interpreter.id,
-      matchScore: best.score,
-      answerMode,
-      answers: answerMode === 'type' ? answers : [],
-      videoSeconds: answerMode === 'record' ? 72 : 0,
-      due: appointment ? slotKey(splitSlot(appointment.slot).day, '08:00') : 'Fri 30 Oct 17:00',
-      status: 'awaiting',
+      phase,
+      interpreterId: null,
+      offeredTo: translationShortlist(data, demoPatientId, doctorId),
+      declinedBy: [],
+      videoSeconds: 72,
+      due: phase === 'Pre-consultation' && appointment ? slotKey(splitSlot(appointment.slot).day, '08:00') : 'Fri 30 Oct 17:00',
+      status: 'open',
       createdAt: Date.now(),
     }
     updatePortal((current) => ({ ...current, tasks: [...current.tasks, task] }))
@@ -554,12 +622,16 @@ function QuestionnaireAnswer({ data, questionnaire }: { data: PortalData; questi
 
   return (
     <article className="questionnaire-card">
-      <div className="message-head"><EnvelopeSimple size={20} /><strong>{questionnaire.from.name}</strong><span className="kind-chip kind-questionnaire">Questionnaire</span><span>{timeAgo(questionnaire.createdAt)}</span></div>
+      <div className="message-head"><EnvelopeSimple size={20} /><strong>{doctor}</strong><span className="kind-chip kind-questionnaire">{questionnaire.phase ?? 'Questionnaire'}</span><span>{timeAgo(questionnaire.createdAt)}</span></div>
       <h3>{questionnaire.subject}</h3>
       <ol className="question-list">{questions.map((question) => <li key={question}>{question}</li>)}</ol>
       <div className="answer-mode" role="radiogroup" aria-label="How do you want to answer?">
-        <button role="radio" aria-checked={answerMode === 'record'} onClick={() => setAnswerMode('record')}><VideoCamera size={20} />Record in BSL</button>
-        <button role="radio" aria-checked={answerMode === 'type'} onClick={() => setAnswerMode('type')}><Keyboard size={20} />Type answers</button>
+        <button role="radio" aria-checked={answerMode === 'record'} onClick={() => setAnswerMode('record')}>
+          <VideoCamera size={20} /><span>Record in BSL<small>An interpreter translates it for {doctor}</small></span>
+        </button>
+        <button role="radio" aria-checked={answerMode === 'type'} onClick={() => setAnswerMode('type')}>
+          <Keyboard size={20} /><span>Type answers<small>Goes straight to {doctor}</small></span>
+        </button>
       </div>
       {answerMode === 'record' ? (
         <div className="record-stage">
@@ -579,24 +651,10 @@ function QuestionnaireAnswer({ data, questionnaire }: { data: PortalData; questi
           ))}
         </div>
       )}
-      <button className="primary-button" disabled={!canSend} onClick={send}><PaperPlaneTilt size={20} />Send answers</button>
+      <button className="primary-button" disabled={!canSend} onClick={send}>
+        <PaperPlaneTilt size={20} />{answerMode === 'record' ? 'Send for translation' : `Send to ${doctor}`}
+      </button>
     </article>
-  )
-}
-
-function SentAnswers({ data }: { data: PortalData }) {
-  const tasks = data.tasks.filter((task) => task.patientId === demoPatientId).sort((a, b) => b.createdAt - a.createdAt)
-  return (
-    <>
-      {tasks.map((task) => (
-        <p className="portal-success" role="status" key={task.id}>
-          <CheckCircle size={20} weight="fill" />
-          {task.status === 'sent'
-            ? `${findInterpreter(task.interpreterId)?.name} has sent the interpretation of your answers to ${doctorName(task.doctorId)}.`
-            : `Answers sent. ${findInterpreter(task.interpreterId)?.name} (${task.matchScore}% match) will interpret them for ${doctorName(task.doctorId)} by ${task.due}.`}
-        </p>
-      ))}
-    </>
   )
 }
 
@@ -622,7 +680,6 @@ type CalendarKind = 'deadline' | 'appointment'
 
 function InterpreterView({ data }: { data: PortalData }) {
   const [meId, setMeId] = useState(interpreterProfiles[0].id)
-  const [declined, setDeclined] = useState<string[]>([])
   const me = findInterpreter(meId) ?? interpreterProfiles[0]
   const meParty = partyFor('interpreter', me.id)
   const myBookings = data.bookings.filter((booking) => (booking.interpreterId === me.id || booking.coInterpreterId === me.id) && !booking.noShow)
@@ -632,30 +689,39 @@ function InterpreterView({ data }: { data: PortalData }) {
   const calendar = [
     ...myBookings.map((booking) => ({
       id: booking.id, slot: booking.slot, kind: 'appointment' as CalendarKind,
-      title: `Consultation · ${booking.mode}${booking.coInterpreterId === me.id ? ' (co-interpreter)' : ''}`, detail: `${patientName(booking.patientId)} with ${doctorName(booking.doctorId)}`,
+      title: `Consultation · ${booking.mode}${booking.coInterpreterId === me.id ? ' (co-interpreter)' : ''}${booking.pendingConfirmation ? ' (to confirm)' : ''}`, detail: `${patientName(booking.patientId)} with ${doctorName(booking.doctorId)}`,
     })),
     ...myTasks.filter((task) => task.status === 'awaiting').map((task) => ({
       id: task.id, slot: task.due, kind: 'deadline' as CalendarKind,
-      title: 'Pre-consult due', detail: `${patientName(task.patientId)} for ${doctorName(task.doctorId)}`,
+      title: `${task.phase === 'Pre-consultation' ? 'Pre-consult' : 'Post-consult'} translation due`, detail: `${patientName(task.patientId)} for ${doctorName(task.doctorId)}`,
     })),
   ]
 
-  const recommended = data.bookings
-    .filter((booking) => !booking.interpreterId && !booking.noShow && !declined.includes(booking.id))
-    .map((booking) => {
-      const ranked = rankInterpreters(data, { patientId: booking.patientId, doctorId: booking.doctorId, slot: booking.slot, mode: booking.mode })
-      const available = ranked.filter((match) => match.available)
-      const position = available.findIndex((match) => match.interpreter.id === me.id)
-      return { booking, match: available[position], position }
-    })
-    .filter((item) => item.position >= 0 && item.position < 3)
-    .sort((a, b) => bySlot(a.booking, b.booking))
+  const jobs = data.tasks
+    .filter((task) => task.status === 'open' && task.offeredTo.includes(me.id) && !task.declinedBy.includes(me.id))
+    .map((task) => ({ task, match: rankInterpreters(data, { patientId: task.patientId, doctorId: task.doctorId }).find((item) => item.interpreter.id === me.id)! }))
+  const requests = myBookings.filter((booking) => booking.pendingConfirmation && booking.interpreterId === me.id)
 
-  const accept = (bookingId: string) => updatePortal((current) => ({
+  const acceptJob = (taskId: string) => updatePortal((current) => ({
     ...current,
-    bookings: current.bookings.map((item) => item.id === bookingId && !item.interpreterId
-      ? { ...item, interpreterId: me.id, coInterpreterId: coInterpreterFor(current, item, me.id) }
-      : item),
+    tasks: current.tasks.map((item) => item.id === taskId && item.status === 'open' ? { ...item, interpreterId: me.id, status: 'awaiting' } : item),
+  }))
+  // Once everyone on the shortlist has declined, the job goes to the next best interpreters.
+  const declineJob = (taskId: string) => updatePortal((current) => ({
+    ...current,
+    tasks: current.tasks.map((item) => {
+      if (item.id !== taskId) return item
+      const declinedBy = [...item.declinedBy, me.id]
+      const everyoneDeclined = item.offeredTo.every((id) => declinedBy.includes(id))
+      const offeredTo = everyoneDeclined ? [...item.offeredTo, ...translationShortlist(current, item.patientId, item.doctorId, item.offeredTo)] : item.offeredTo
+      return { ...item, declinedBy, offeredTo }
+    }),
+  }))
+  const answerRequest = (bookingId: string, accepted: boolean) => updatePortal((current) => ({
+    ...current,
+    bookings: current.bookings.map((item) => item.id !== bookingId ? item
+      : accepted ? { ...item, pendingConfirmation: false }
+        : { ...item, interpreterId: null, coInterpreterId: null, pendingConfirmation: false }),
   }))
 
   const contacts = [
@@ -684,6 +750,7 @@ function InterpreterView({ data }: { data: PortalData }) {
 
       <section className="portal-panel" aria-labelledby="calendar-title">
         <h2 id="calendar-title">Next five working days</h2>
+        <p className="panel-intro">Consultations are booked straight into your calendar from the availability you declared.</p>
         <ul className="calendar-legend" aria-label="Calendar key">
           <li className="kind-pre-deadline">Interpretation deadline</li>
           <li className="kind-appointment">Consultation appointment</li>
@@ -710,32 +777,54 @@ function InterpreterView({ data }: { data: PortalData }) {
         {myTasks.filter((task) => task.status === 'awaiting').map((task) => <InterpretationWork data={data} task={task} me={meParty} key={task.id} />)}
       </section>
 
-      <section className="portal-panel" aria-labelledby="tasks-title">
-        <h2 id="tasks-title"><ListChecks size={24} />New appointments recommended for you</h2>
-        <p className="panel-intro">Appointments still without an interpreter where the model ranks you in the top three.</p>
-        {recommended.length === 0 && <p className="panel-intro">No open recommendations right now.</p>}
+      <section className="portal-panel" aria-labelledby="jobs-title">
+        <h2 id="jobs-title"><ListChecks size={24} />New translation jobs</h2>
+        <p className="panel-intro">Recorded answers to pre- and post-consultation questions. Take the ones you want; the first to accept gets the job.</p>
+        {jobs.length === 0 && <p className="panel-intro">No translation jobs offered to you right now.</p>}
         <div className="task-list">
-          {recommended.map(({ booking, match, position }) => (
-            <article className="task-card" key={booking.id}>
+          {jobs.map(({ task, match }) => (
+            <article className="task-card" key={task.id}>
               <div className="task-top">
-                <span className="kind-chip kind-appointment">Consultation · {booking.mode}</span>
-                <span className="match-score">{match.score}% match · #{position + 1}</span>
+                <span className={`kind-chip kind-${task.phase === 'Pre-consultation' ? 'pre-deadline' : 'post-deadline'}`}>{task.phase} translation</span>
+                <span className="match-score">{match.score}% match</span>
               </div>
-              <h3>{patientName(booking.patientId)} · {findDoctor(booking.doctorId)?.specialty}</h3>
-              <p className="task-meta"><Clock size={16} />{booking.slot} with {doctorName(booking.doctorId)} · {durationLabel(booking.durationMinutes)}</p>
-              <p className="task-meta"><CurrencyGbp size={16} />Earnings: {formatPounds(liveFee(booking.durationMinutes, booking.slot).perInterpreter)}{booking.durationMinutes > 60 ? ' · Needs 2 interpreters' : ''}</p>
+              <h3>{patientName(task.patientId)} · {findDoctor(task.doctorId)?.specialty}</h3>
+              <p className="task-meta"><VideoCamera size={16} />{Math.floor(task.videoSeconds / 60)} min {task.videoSeconds % 60} s BSL video for {doctorName(task.doctorId)}</p>
+              <p className="task-meta"><Clock size={16} />Due {task.due}</p>
+              <p className="task-meta"><CurrencyGbp size={16} />Earnings: {formatPounds(videoFee(task.videoSeconds).total)}</p>
               <details>
                 <summary>Why you were matched</summary>
                 <ReasonChips match={match} limit={4} />
               </details>
               <div className="compact-actions">
-                <button className="primary-button small-button" onClick={() => accept(booking.id)}>Accept</button>
-                <button className="text-button" onClick={() => setDeclined([...declined, booking.id])}>Decline</button>
+                <button className="primary-button small-button" onClick={() => acceptJob(task.id)}>Accept</button>
+                <button className="text-button" onClick={() => declineJob(task.id)}>Decline</button>
               </div>
             </article>
           ))}
         </div>
       </section>
+
+      {requests.length > 0 && (
+        <section className="portal-panel" aria-labelledby="requests-title">
+          <h2 id="requests-title">Requests outside your availability</h2>
+          <p className="panel-intro">A patient chose you for a time you had not declared. Confirm if you can make it.</p>
+          <div className="task-list">
+            {requests.map((booking) => (
+              <article className="task-card" key={booking.id}>
+                <span className="kind-chip kind-appointment">Consultation · {booking.mode}</span>
+                <h3>{patientName(booking.patientId)} with {doctorName(booking.doctorId)}</h3>
+                <p className="task-meta"><Clock size={16} />{booking.slot} · {durationLabel(booking.durationMinutes)}</p>
+                <p className="task-meta"><CurrencyGbp size={16} />Earnings: {formatPounds(liveFee(booking.durationMinutes, booking.slot).perInterpreter)}</p>
+                <div className="compact-actions">
+                  <button className="primary-button small-button" onClick={() => answerRequest(booking.id, true)}>Confirm</button>
+                  <button className="text-button" onClick={() => answerRequest(booking.id, false)}>Decline</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="portal-panel" aria-labelledby="interpreter-messages-title">
         <h2 id="interpreter-messages-title"><ChatCircleText size={24} />Messages{unreadCount(data, me.id) > 0 && <span className="tab-badge">{unreadCount(data, me.id)} unread</span>}</h2>
@@ -781,7 +870,7 @@ function InterpretationWork({ data, task, me }: { data: PortalData; task: Interp
       from: me,
       to: partyFor('doctor', task.doctorId),
       kind: 'interpretation',
-      subject: `Interpretation: ${patient} pre-consultation`,
+      subject: `Interpretation: ${patient} ${task.phase.toLowerCase()}`,
       body: text.trim(),
       createdAt: Date.now(),
     }
@@ -794,14 +883,9 @@ function InterpretationWork({ data, task, me }: { data: PortalData; task: Interp
 
   return (
     <article className="questionnaire-card">
-      <div className="message-head"><strong>{patient}</strong><span>for {doctorName(task.doctorId)}</span><span className="kind-chip kind-pre-deadline">Due {task.due}</span><span className="match-score">{task.matchScore}% match</span></div>
-      {task.answerMode === 'record' ? (
-        <div className="record-stage compact"><VideoCamera size={32} weight="duotone" /><p><strong>Simulated BSL recording, {Math.floor(task.videoSeconds / 60)} min {task.videoSeconds % 60} s.</strong> Earnings: {formatPounds(videoFee(task.videoSeconds).total)}. In a real service you would watch the patient’s video here.</p></div>
-      ) : (
-        <dl className="answer-list">
-          {questions.map((question, index) => <div key={question}><dt>{question}</dt><dd>{task.answers[index] || 'No answer'}</dd></div>)}
-        </dl>
-      )}
+      <div className="message-head"><strong>{patient}</strong><span>for {doctorName(task.doctorId)}</span><span className="kind-chip kind-pre-deadline">{task.phase} · due {task.due}</span></div>
+      <ol className="question-list">{questions.map((question) => <li key={question}>{question}</li>)}</ol>
+      <div className="record-stage compact"><VideoCamera size={32} weight="duotone" /><p><strong>Simulated BSL recording, {Math.floor(task.videoSeconds / 60)} min {task.videoSeconds % 60} s.</strong> Earnings: {formatPounds(videoFee(task.videoSeconds).total)}. In a real service you would watch the patient’s video here.</p></div>
       <label className="input-block"><span>English interpretation for {doctorName(task.doctorId)}</span>
         <textarea rows={3} value={text} onChange={(event) => setText(event.target.value)} />
       </label>
@@ -817,10 +901,13 @@ function DoctorView({ data }: { data: PortalData }) {
   const schedule = data.bookings.filter((booking) => booking.doctorId === me.id).sort(bySlot)
 
   const preConsultStatus = (patientId: string) => {
-    const tasks = data.tasks.filter((task) => task.patientId === patientId && task.doctorId === me.id)
+    const tasks = data.tasks.filter((task) => task.patientId === patientId && task.doctorId === me.id && task.phase === 'Pre-consultation')
+    const typed = data.messages.some((message) => message.kind === 'answers' && message.from.id === patientId && message.to.id === me.id && message.phase === 'Pre-consultation')
     if (tasks.some((task) => task.status === 'sent')) return 'Interpreted'
-    if (tasks.length > 0) return 'With interpreter'
-    if (data.messages.some((message) => message.kind === 'questionnaire' && message.from.id === me.id && message.to.id === patientId)) return 'Awaiting patient'
+    if (typed) return 'Answered by text'
+    if (tasks.some((task) => task.status === 'awaiting')) return 'With interpreter'
+    if (tasks.length > 0) return 'Finding interpreter'
+    if (data.messages.some((message) => message.kind === 'questionnaire' && message.phase !== 'Post-consultation' && message.from.id === me.id && message.to.id === patientId)) return 'Awaiting patient'
     return 'Not sent'
   }
 
@@ -858,7 +945,7 @@ function DoctorView({ data }: { data: PortalData }) {
                 <div className="schedule-row" role="row" key={booking.id}>
                   <span role="cell"><strong>{booking.slot}</strong></span>
                   <span role="cell">{patientName(booking.patientId)}</span>
-                  <span role="cell">{booking.noShow ? 'No-show reported' : interpreterNames(booking) || 'Patient choosing'}</span>
+                  <span role="cell">{booking.noShow ? 'No-show reported' : interpreterNames(booking) ? `${interpreterNames(booking)}${booking.pendingConfirmation ? ' (to confirm)' : ''}` : 'Patient choosing'}</span>
                   <span role="cell">{booking.mode === 'Online' ? <VideoCamera size={17} /> : <MapPin size={17} />}{booking.mode} · {durationLabel(booking.durationMinutes)}</span>
                   <span role="cell"><span className={`pre-status pre-${status.toLowerCase().replaceAll(' ', '-')}`}>{status}</span></span>
                 </div>
@@ -897,7 +984,7 @@ interface EarningsJob {
 function InterpreterEarnings({ data, interpreterId }: { data: PortalData; interpreterId: string }) {
   const jobs: EarningsJob[] = [
     ...data.bookings
-      .filter((booking) => (booking.interpreterId === interpreterId || booking.coInterpreterId === interpreterId) && !booking.noShow)
+      .filter((booking) => (booking.interpreterId === interpreterId || booking.coInterpreterId === interpreterId) && !booking.noShow && !booking.pendingConfirmation)
       .map((booking) => ({
         id: booking.id,
         slot: booking.slot,

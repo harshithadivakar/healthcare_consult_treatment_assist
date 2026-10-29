@@ -99,6 +99,14 @@ export function rankInterpreters(
   return matches.sort((a, b) => rank(a) - rank(b) || b.score - a.score)
 }
 
+/** The interpreters a translation job is offered to: the best-ranked who have not missed an appointment. */
+export function translationShortlist(data: PortalData, patientId: string, doctorId: string, skip: string[] = [], size = 3) {
+  return rankInterpreters(data, { patientId, doctorId })
+    .filter((match) => !match.penalised && !skip.includes(match.interpreter.id))
+    .slice(0, size)
+    .map((match) => match.interpreter.id)
+}
+
 /** Over an hour, the platform adds the best other available interpreter as co-interpreter. */
 export function coInterpreterFor(data: PortalData, booking: Booking, leadId: string) {
   if (booking.durationMinutes <= 60) return null

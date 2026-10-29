@@ -713,6 +713,16 @@ button.flow-lane-label:hover { border-color: var(--role); }
 .rate-card ul { margin: .4rem 0; padding-left: 1.2rem; }
 .rate-card li { margin-bottom: .35rem; line-height: 1.45; }
 
+.answer-chain { list-style: none; margin: .4rem 0 0; padding: .55rem .7rem; display: grid; gap: .3rem; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); font-size: .84rem; }
+.answer-chain li { display: flex; align-items: flex-start; gap: .4rem; line-height: 1.35; }
+.answer-chain svg { flex: 0 0 auto; margin-top: .1rem; }
+.chain-done svg { color: var(--success); }
+.chain-waiting { color: var(--muted); }
+.answer-mode button span { display: grid; text-align: left; }
+.answer-mode button small { color: var(--muted); font-weight: 600; font-size: .78rem; }
+.pre-answered-by-text { background: var(--accent-soft); color: var(--accent-dark); }
+.pre-finding-interpreter { background: var(--warning-soft); color: var(--warning); }
+.pre-not-sent { background: var(--surface-strong); color: var(--muted); }
 .messenger { display: grid; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); min-height: 420px; border: 1px solid var(--border); border-radius: var(--radius-control); overflow: hidden; }
 .conversation-list { border-right: 1px solid var(--border); background: var(--surface-soft); display: flex; flex-direction: column; min-width: 0; }
 .start-conversation { padding: .7rem; border-bottom: 1px solid var(--border); font-size: .9rem; }

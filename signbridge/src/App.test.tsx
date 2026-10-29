@@ -104,33 +104,60 @@ describe('SignBridge care journey', () => {
   it('shows a message sent in another tab without reloading', async () => {
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: /^doctor view/i }))
-    const saved = JSON.parse(window.localStorage.getItem('signbridge-demo-portal-v2')!) as PortalData
+    const saved = JSON.parse(window.localStorage.getItem('signbridge-demo-portal-v3')!) as PortalData
     saved.messages.push({
       id: 'other-tab', from: { role: 'patient', id: 'pat-alex', name: 'Alex Lewis' }, to: { role: 'doctor', id: 'doc-bell', name: 'Dr Bell' },
       kind: 'message', subject: 'Message from Alex Lewis', body: 'Sent from the other tab', createdAt: Date.now(),
     })
     const value = JSON.stringify(saved)
     act(() => {
-      window.localStorage.setItem('signbridge-demo-portal-v2', value)
-      window.dispatchEvent(new StorageEvent('storage', { key: 'signbridge-demo-portal-v2', newValue: value }))
+      window.localStorage.setItem('signbridge-demo-portal-v3', value)
+      window.dispatchEvent(new StorageEvent('storage', { key: 'signbridge-demo-portal-v3', newValue: value }))
     })
     expect(within(screen.getByRole('region', { name: /conversation with alex lewis/i })).getByText('Sent from the other tab')).toBeInTheDocument()
   })
 
-  it('routes questionnaire answers to the matched interpreter and the interpretation to the doctor', async () => {
+  it('sends typed answers straight to the doctor without an interpreter', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(screen.getByRole('button', { name: /^patient view/i }))
     await user.click(screen.getByRole('tab', { name: /messages/i }))
     await user.click(screen.getByRole('radio', { name: /type answers/i }))
     for (const box of screen.getAllByRole('textbox').slice(0, 3)) await user.type(box, 'Chest pain since Monday.')
-    await user.click(screen.getByRole('button', { name: /send answers/i }))
-    const status = screen.getByText(/answers sent\./i).textContent!
-    const interpreterName = /Answers sent\. (.+?) \(\d+% match\)/.exec(status)![1]
-    const interpreter = interpreterProfiles.find((item) => item.name === interpreterName)!
+    await user.click(screen.getByRole('button', { name: /send to dr bell/i }))
+    const saved = JSON.parse(window.localStorage.getItem('signbridge-demo-portal-v3')!) as PortalData
+    expect(saved.tasks.some((task) => task.questionnaireId === 'seed-m1')).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: /^doctor$/i }))
+    const thread = screen.getByRole('region', { name: /conversation with alex lewis/i })
+    expect(within(thread).getAllByText('Chest pain since Monday.')).toHaveLength(3)
+    expect(within(thread).getByText(/typed the answers and sent them straight to dr bell/i)).toBeInTheDocument()
+    const alexRow = screen.getByRole('cell', { name: 'Alex Lewis' }).closest('[role="row"]') as HTMLElement
+    expect(within(alexRow).getByText('Answered by text')).toBeInTheDocument()
+  })
+
+  it('turns a recorded answer into a translation job and shows the doctor the chain', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /^patient view/i }))
+    await user.click(screen.getByRole('tab', { name: /messages/i }))
+    await user.click(screen.getByRole('button', { name: /start recording/i }))
+    await user.click(screen.getByRole('button', { name: /stop recording/i }))
+    await user.click(screen.getByRole('button', { name: /send for translation/i }))
+    const job = (JSON.parse(window.localStorage.getItem('signbridge-demo-portal-v3')!) as PortalData).tasks.find((task) => task.questionnaireId === 'seed-m1')!
+    expect(job).toMatchObject({ status: 'open', interpreterId: null })
+    expect(job.offeredTo).toHaveLength(3)
+
+    await user.click(screen.getByRole('button', { name: /^doctor$/i }))
+    await user.click(screen.getByRole('button', { name: /^alex lewis/i }))
+    expect(within(screen.getByRole('region', { name: /conversation with alex lewis/i })).getByText(/offered to 3 interpreters/i)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /^bsl interpreter$/i }))
-    await user.selectOptions(screen.getByRole('combobox', { name: /viewing as interpreter/i }), interpreter.id)
+    await user.selectOptions(screen.getByRole('combobox', { name: /viewing as interpreter/i }), job.offeredTo[0])
+    const jobs = screen.getByRole('region', { name: /new translation jobs/i })
+    const card = within(jobs).getByText(/alex lewis/i).closest('article') as HTMLElement
+    expect(within(card).getByText(/earnings: £50\.00/i)).toBeInTheDocument()
+    await user.click(within(card).getByRole('button', { name: /^accept$/i }))
     await user.type(screen.getByRole('textbox', { name: /english interpretation for dr bell/i }), 'Chest pain since Monday.')
     await user.click(screen.getByRole('button', { name: /send to dr bell/i }))
 
@@ -138,18 +165,27 @@ describe('SignBridge care journey', () => {
     expect(within(screen.getByRole('region', { name: /conversation with/i })).getByText('Interpretation: Alex Lewis pre-consultation')).toBeInTheDocument()
     const alexRow = screen.getByRole('cell', { name: 'Alex Lewis' }).closest('[role="row"]') as HTMLElement
     expect(within(alexRow).getByText('Interpreted')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^alex lewis/i }))
+    const chain = within(screen.getByRole('region', { name: /conversation with alex lewis/i })).getByRole('list', { name: /answer progress/i })
+    expect(within(chain).getByText(/accepted the translation/i)).toBeInTheDocument()
+    expect(within(chain).getByText(/english translation sent to dr bell/i)).toBeInTheDocument()
   })
 
-  it('recommends open appointments to interpreters the model ranks highly', async () => {
+  it('books consultations straight into the calendar and lets interpreters decline translation jobs', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(screen.getByRole('button', { name: /^bsl interpreter view/i }))
-    expect(screen.getByText(/how matching works/i)).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: /recommended for you/i })).not.toBeInTheDocument()
     expect(screen.getByText('Bisi Okonjo for Dr Shah')).toBeInTheDocument()
-    const recommendations = screen.getByRole('region', { name: /new appointments recommended for you/i })
-    const [accept] = within(recommendations).getAllByRole('button', { name: /^accept$/i })
-    await user.click(accept)
-    expect(within(screen.getByRole('region', { name: /next five working days/i })).getAllByText(/consultation/i).length).toBeGreaterThan(1)
+    let jobs = screen.getByRole('region', { name: /new translation jobs/i })
+    const card = within(jobs).getByText(/cara walsh/i).closest('article') as HTMLElement
+    expect(within(card).getByText(/post-consultation translation/i)).toBeInTheDocument()
+    await user.click(within(card).getByRole('button', { name: /^decline$/i }))
+    jobs = screen.getByRole('region', { name: /new translation jobs/i })
+    expect(within(jobs).queryByText(/cara walsh/i)).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /viewing as interpreter/i }), 'int-callum')
+    expect(within(screen.getByRole('region', { name: /new translation jobs/i })).getByText(/cara walsh/i)).toBeInTheDocument()
   })
 })
 
@@ -177,10 +213,10 @@ describe('interpreter matching model', () => {
     const eightDaysAgo = Date.now() - 8 * 24 * 60 * 60 * 1000
     updatePortal((data) => ({
       ...data,
-      bookings: [...data.bookings, { id: 'fresh', patientId: 'pat-alex', doctorId: 'doc-novak', slot: 'Tue 3 Nov 14:00', mode: 'Online', durationMinutes: 30, interpreterId: null, coInterpreterId: null, noShow: false, createdAt: Date.now() }],
+      bookings: [...data.bookings, { id: 'fresh', patientId: 'pat-alex', doctorId: 'doc-novak', slot: 'Tue 3 Nov 14:00', mode: 'Online', durationMinutes: 30, interpreterId: null, coInterpreterId: null, pendingConfirmation: false, noShow: false, createdAt: Date.now() }],
       messages: [...data.messages, { ...data.messages[0], id: 'old', createdAt: eightDaysAgo }],
     }))
-    const saved = JSON.parse(window.localStorage.getItem('signbridge-demo-portal-v2')!) as PortalData
+    const saved = JSON.parse(window.localStorage.getItem('signbridge-demo-portal-v3')!) as PortalData
     expect(saved.bookings.some((booking) => booking.id === 'fresh')).toBe(true)
     expect(saved.messages.some((message) => message.id === 'old')).toBe(false)
   })
@@ -201,7 +237,7 @@ describe('interpreter pricing and earnings', () => {
     expect(liveFee(30, 'Fri 30 Oct 20:30').total).toBe(90)
   })
 
-  it('shows expected earnings this week and adds an accepted appointment', async () => {
+  it('shows expected earnings this week and adds an accepted translation job', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(screen.getByRole('button', { name: /^bsl interpreter view/i }))
@@ -213,9 +249,9 @@ describe('interpreter pricing and earnings', () => {
     expect(within(earnings).getByRole('columnheader', { name: 'Earnings' })).toBeInTheDocument()
     expect(within(earnings).getByText(/out of hours × 1\.5/i)).toBeInTheDocument()
 
-    const recommendations = screen.getByRole('region', { name: /new appointments recommended for you/i })
-    await user.click(within(recommendations).getAllByRole('button', { name: /^accept$/i })[0])
-    expect(within(screen.getByRole('region', { name: /earnings/i })).getAllByText('£330.00').length).toBeGreaterThan(0)
+    const jobs = screen.getByRole('region', { name: /new translation jobs/i })
+    await user.click(within(jobs).getAllByRole('button', { name: /^accept$/i })[0])
+    expect(within(screen.getByRole('region', { name: /earnings/i })).getAllByText('£320.00').length).toBeGreaterThan(0)
   })
 
   it('only books appointments over an hour when 2 interpreters are free', async () => {
@@ -231,17 +267,18 @@ describe('interpreter pricing and earnings', () => {
   it('adds a co-interpreter automatically for appointments over an hour', async () => {
     const user = userEvent.setup()
     render(<App />)
-    await user.click(screen.getByRole('button', { name: /^bsl interpreter view/i }))
-    const recommendations = screen.getByRole('region', { name: /new appointments recommended for you/i })
-    const bisiCard = within(recommendations).getByText(/bisi okonjo/i).closest('article') as HTMLElement
-    expect(within(bisiCard).getByText(/earnings: £90\.00 · needs 2 interpreters/i)).toBeInTheDocument()
-    await user.click(within(bisiCard).getByRole('button', { name: /^accept$/i }))
+    await user.click(screen.getByRole('button', { name: /^patient view/i }))
+    await user.click(screen.getByRole('radio', { name: /2 interpreters needed/i }))
+    await user.click(screen.getByRole('button', { name: /tue 3 nov.*11:30/i }))
+    await user.click(screen.getByRole('button', { name: /book appointment/i }))
+    await user.click(screen.getAllByRole('button', { name: /choose an interpreter/i }).at(-1)!)
+    expect(screen.getByText(/this appointment needs 2 interpreters/i)).toBeInTheDocument()
+    await user.click(screen.getAllByRole('button', { name: /^choose /i })[0])
+    expect(screen.getByRole('button', { name: /co-interpreter/i })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /^doctor$/i }))
-    await user.selectOptions(screen.getByRole('combobox', { name: /viewing as doctor/i }), 'doc-shah')
-    const bisiRow = screen.getByRole('cell', { name: 'Bisi Okonjo' }).closest('[role="row"]') as HTMLElement
-    expect(within(bisiRow).getByText(/^Amara Okafor \+ .+/)).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: /rate amara okafor/i })).toBeInTheDocument()
+    const row = screen.getByRole('cell', { name: 'Tue 3 Nov 11:30' }).closest('[role="row"]') as HTMLElement
+    expect(within(row).getByText(/ \+ /)).toBeInTheDocument()
   })
 
   it('keeps pay out of the patient and doctor views', async () => {
